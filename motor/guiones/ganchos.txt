@@ -1,6 +1,7 @@
 # titulo: 3 ganchos que no fallan
 # voz: es-MX-JorgeNeural
 # fondo: violeta
+# avatar: base, pulgar
 
 Nueve de cada diez videos se pierden en los primeros tres segundos.
 No es el algoritmo. Es tu gancho.

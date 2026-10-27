@@ -369,9 +369,55 @@ def _verificacion(rgba, d, destino):
     vis.crop((max(x0 - 10, 0), y0, x1 + 10, y0 + int(alto * 0.45))).save(destino)
 
 
+def medir_carpeta(carpeta=None, hablar=True):
+    """Mide todas las imagenes de `avatares/`. Devuelve (logrados, fallidos)."""
+    import glob
+    carpeta = carpeta or os.path.join(AQUI, 'avatares')
+    os.makedirs(carpeta, exist_ok=True)
+    rutas = sorted(sum((glob.glob(os.path.join(carpeta, e))
+                        for e in ('*.png', '*.jpg', '*.jpeg', '*.webp')), []))
+    ok, mal = [], []
+    for r in rutas:
+        nom = os.path.splitext(os.path.basename(r))[0]
+        try:
+            d, _ = medir(r, nom)
+            alt = d['mouth_line'] - d['mouth_top']
+            diente = float(alt[len(alt) // 2])
+            ancho = int(d['mouth_x1'] - d['mouth_x0'])
+            sep = float(d['eye_sep'])
+            # Sin dientes visibles el cierre de labios no tiene nada que tapar, y
+            # una boca estrecha suele significar que se midio otra cosa.
+            # Poco diente no impide hablar: la mandibula abre igual. Lo que sale
+            # flojo es el cierre de labios en M/B/P, que necesita diente que tapar.
+            nota = ''
+            if ancho < 0.9 * sep:
+                nota = '  <- boca estrecha, revisa el _check'
+            elif diente < 0.05 * sep:
+                nota = '  <- poco diente: el cierre en M/B/P sera flojo'
+            if hablar:
+                print(f'  OK    {nom:16s} sep {sep:3.0f} | boca {ancho:3d} px | '
+                      f'diente {diente:4.1f} px{nota}')
+            ok.append(nom)
+        except Exception as e:
+            if hablar:
+                print(f'  FALLA {nom:16s} {e}')
+            mal.append((nom, str(e)))
+    return ok, mal
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print(__doc__); sys.exit(1)
+        print('Midiendo todo lo que haya en avatares/ ...')
+        ok, mal = medir_carpeta()
+        print(f'\n{len(ok)} medidos, {len(mal)} fallidos')
+        if ok:
+            print('Revisa rigs/<nombre>_check.png antes de usarlos.')
+            print('Luego en el guion:  # avatar: ' + ', '.join(ok))
+        if mal:
+            print('\nLos fallos suelen ser poses de perfil (falta un ojo) o con la')
+            print('boca ya abierta (no hay costura que abrir). Sirven como poses')
+            print('de recurso: ponlas en poses_fuente/ y corre poses.py')
+        sys.exit(0)
     d, _ = medir(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
     print(f"boca      x {d['mouth_x0']}-{d['mouth_x1']} | "
           f"costura y {d['mouth_line'].min():.0f}-{d['mouth_line'].max():.0f}")

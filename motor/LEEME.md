@@ -1,7 +1,32 @@
-# Motor de avatar — Fase 4
+# Motor de avatar
 
-Convierte guiones de texto en videos verticales con el personaje hablando. Todo
+Convierte guiones de texto en videos verticales con un personaje hablando. Todo
 local, sin coste, sin marca de agua, sin GPU.
+
+**Sirve para cualquier avatar**, no solo para este. Nada está fijado a un personaje:
+las coordenadas salen de una medición automática y las amplitudes se escalan con la
+separación ocular, así que una apertura de boca significa lo mismo en una cabeza
+grande que en una pequeña.
+
+## Dar de alta un avatar nuevo
+
+1. Deja las imágenes en `avatares/` (fondo plano, cuerpo entero, cara de frente).
+2. `python medir.py` — mide todas y dice cuáles salieron.
+3. **Mira `rigs/<nombre>_check.png`.** Verde y magenta son los ojos, cian el borde
+   de la boca, amarillo el borde del diente, naranja las cejas, rojo la barbilla.
+   Una medida mal tomada se nota en todos los videos.
+4. En el guion: `# avatar: nombre1, nombre2` — si pones varios, se alternan por plano.
+
+Para una sola imagen suelta: `python medir.py ruta.png nombre`.
+
+### Cuándo falla, y por qué está bien que falle
+
+- *"solo 1 candidatos a ojo"* → pose de perfil. No se puede animar la boca de perfil.
+- *"no se encuentra la costura de la boca"* o diente ≈ 0 → la boca ya está abierta o
+  cerrada sin dientes. El rig abre desde una costura; si no la hay, no hay nada que
+  abrir.
+
+Esas imágenes no se pierden: sirven como **poses de recurso** (ver más abajo).
 
 ## Uso
 
@@ -33,6 +58,7 @@ defecto, así que un guion puede ser solo texto.
 
 | Opción | Valores |
 |---|---|
+| `avatar` | Nombre(s) de `rigs/`. Varios separados por coma se alternan |
 | `titulo` | Texto fijo arriba, en cápsula oscura. Vacío = sin título |
 | `voz` | Cualquier ID de `python -m edge_tts --list-voices` |
 | `fondo` | `violeta`, `noche`, `ambar`, `verde`, `carmin` |
@@ -71,19 +97,16 @@ reaprovecha. Si borras `cache/`, se regenera sola.
 | `crear.py` | Un guion: cabecera, voz, envolvente, render |
 | `render.py` | Cámara, fondo, subtítulos y codificación |
 | `estilo.py` | Fondos, planos de cámara, tipografía |
+| `medir.py` | Mide ojos, boca, cejas y barbilla de cualquier imagen |
 | `poses.py` | Recorta y cataloga las poses de recurso |
 | `avatar.py` | El rig: mandíbula, ancho de boca, cierre de labios, párpados, cejas, ladeo |
 | `fonemas.py` | Texto → fonemas → visemas (reglas del español) |
 | `anim.py` | Forma de boca por fotograma, parpadeos y acentos |
-| `cutout.py` | Recorta el fondo blanco (ya ejecutado) |
-| `eyemask.py` | Detecta la abertura de los ojos (ya ejecutado) |
-| `mouthline.py` | Mide los bordes de la boca (ya ejecutado) |
-| `carlos_rgba.png` | Personaje con fondo transparente |
-| `eye_masks.npy`, `mouth_line.npz` | Medidas del personaje |
-
-`cutout.py`, `eyemask.py` y `mouthline.py` solo hay que volver a correrlos si cambias
-la imagen base. Cada uno deja una imagen de verificación al lado: míralas antes de
-renderizar, porque un rasgo mal medido se nota en todos los videos.
+| `avatares/` | Imágenes de origen que quieres medir |
+| `rigs/` | Lo medido: `<nombre>.png`, `<nombre>.npz` y `<nombre>_check.png` |
+| `poses/` | Poses de recurso ya recortadas |
+| `guiones/` | Tus guiones `.txt` |
+| `cache/` | Voz reutilizable, indexada por texto y voz |
 
 ## Poses de recurso
 
@@ -164,25 +187,37 @@ Un grupo de una sola palabra queda huérfano, así que se le pasa la última del
 anterior — salvo que ese grupo cierre frase, donde el corte es intencionado
 (*Uno:*, *Dos:*, *Tres:* se quedan solos a propósito).
 
-## Coordenadas del personaje (imagen base 853×1280)
+## Cómo se mide (y qué se aprendió midiendo)
 
-Medidas sobre `carlos_rgba.png`. Si cambias la imagen, hay que volver a medirlas.
+El borde de la boca **no es una fórmula**: se mide columna por columna. En el
+personaje de referencia va de y 367 en las comisuras a y 399 en el centro, 32 px de
+arco. Una parábola de 9 px dejaba el filo de los dientes superiores dentro de la
+banda móvil y parecía una segunda boca debajo.
 
-- Boca: comisuras x 352–497. El borde **no** es una fórmula: se mide por columna y se
-  guarda en `mouth_line.npz`. Va de y 367 en las comisuras a y 399 en el centro
-  (32 px de arco). Una parábola de 9 px dejaba el filo de los dientes superiores
-  dentro de la banda móvil y parecía una segunda boca debajo.
-- Mandíbula: hasta y 470, cuello absorbe 62 px
-- Ojos: izq x 334–404, der x 447–514, ambos y 246–302
-- Cejas: y 196–240, x 308–562
+**Un ojo no es la esclerótica.** El iris la parte en dos medialunas finas que
+cualquier filtro de forma descarta. Lo que funciona es buscar la *abertura* entera
+—esclerótica, iris y contorno— como región no-piel rodeada de piel.
 
-### Dos trampas al medir el borde
+**Una ceja también es una isla oscura rodeada de piel**, pareada y más arriba. Con
+una puntuación que premiaba estar arriba, el medidor detectaba las cejas como ojos.
+Lo que las separa: un ojo contiene esclerótica clara, una ceja no.
+
+**La boca no es el punto más oscuro bajo los ojos.** El cuello de la camisa es más
+oscuro que la costura, así que la ventana de búsqueda tiene que ser estrecha. Y
+dentro de ella, la costura viene pegada a la sombra de la nariz: por columna hay dos
+tramos y hay que quedarse con el de abajo.
+
+**Los pliegues de la sonrisa continúan la costura hacia abajo.** Caminando hacia
+fuera desde el centro de la cara, la costura sube hasta la comisura y luego vuelve a
+bajar: la boca acaba en ese mínimo.
+
+### Dos trampas más
 
 **El festón y la pendiente se confunden.** Los dientes tienen filo festoneado
 (0.7 px de media, hasta 4.2) y hay que rebajarlo, pero la curva de la sonrisa tiene
 pendientes de 1.7 px por columna. Una envolvente directa de ±5 columnas captura
 8.6 px de pendiente además del festón y arrastra la línea hasta 13 px, dejando
-esquirlas de labio claro sobre la cavidad. Por eso `mouthline.py` separa tendencia de
+esquirlas de labio claro sobre la cavidad. Por eso `medir.py` separa tendencia de
 residuo y aplica la envolvente **solo al residuo**.
 
 **El perfil de apertura necesita pendiente nula en las comisuras.** Usaba
@@ -200,10 +235,12 @@ meseta central.
 ## Limitaciones actuales
 
 - **Las poses de recurso no mueven la boca.** Son imágenes fijas con respiración y
-  zoom. Por eso duran 2 segundos: más tiempo y se nota. Para que una pose hablase
-  habría que medirle boca y ojos como a la imagen base, y solo *pulgar* y *saludando*
-  tienen la estructura de dientes + costura que el rig necesita; el resto tiene la
-  boca cerrada, en O, o está de perfil.
-- La pose que habla es siempre la misma: sonríe incluso en frases serias.
+  zoom. Por eso duran 2 segundos: más tiempo y se nota.
+- De las siete poses generadas, solo **`pulgar`** pasó la medición como pose
+  parlante. `saludando` ya tiene la boca abierta (no hay costura que abrir), las de
+  perfil esconden un ojo, y el resto tiene la boca cerrada sin dientes. No es una
+  limitación del medidor: es que una pose con la boca abierta no se puede abrir más.
+- El rig abre la mandíbula desde una costura; no forma la boca desde cero. Un avatar
+  con la boca muy abierta de partida no es rigeable con este método.
 - `edge-tts` usa un endpoint no oficial de Microsoft; si deja de funcionar, el
   reemplazo local es Piper TTS.

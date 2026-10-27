@@ -21,7 +21,7 @@ CACHE = os.path.join(AQUI, 'cache')
 
 POR_DEFECTO = {'voz': 'es-MX-JorgeNeural', 'rate': '+9%', 'pitch': '-2Hz',
                'fondo': 'violeta', 'planos': 'si', 'titulo': '',
-               'recursos': 'si'}
+               'recursos': 'si', 'avatar': 'base'}
 SI = {'si', 'sí', 'true', '1', 'yes'}
 NO = {'no', 'false', '0'}
 
