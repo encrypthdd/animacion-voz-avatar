@@ -1,0 +1,7 @@
+# titulo: Deja de grabarte la cara
+# voz: es-US-AlonsoNeural
+# fondo: ambar
+
+Deja de grabarte la cara para hacer contenido.
+Tu avatar puede hablar por ti, y nunca tiene un mal día.
+Guarda esto antes de que se te olvide.

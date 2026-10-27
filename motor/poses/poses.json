@@ -1,0 +1,44 @@
+{
+ "caminando": {
+  "archivo": "caminando.png",
+  "w": 506,
+  "h": 1165,
+  "origen": "Gemini_Generated_Image_7j1t8q7j1t8q7j1t.jpeg"
+ },
+ "sorprendido": {
+  "archivo": "sorprendido.png",
+  "w": 460,
+  "h": 1166,
+  "origen": "Gemini_Generated_Image_faauf8faauf8faau.jpeg"
+ },
+ "hombros": {
+  "archivo": "hombros.png",
+  "w": 789,
+  "h": 1166,
+  "origen": "Gemini_Generated_Image_ghz7m9ghz7m9ghz7.jpeg"
+ },
+ "pulgar": {
+  "archivo": "pulgar.png",
+  "w": 547,
+  "h": 1163,
+  "origen": "Gemini_Generated_Image_l0ezjxl0ezjxl0ez.jpeg"
+ },
+ "caminando2": {
+  "archivo": "caminando2.png",
+  "w": 502,
+  "h": 1156,
+  "origen": "Gemini_Generated_Image_w3r3t1w3r3t1w3r3.jpeg"
+ },
+ "pensativo": {
+  "archivo": "pensativo.png",
+  "w": 446,
+  "h": 1170,
+  "origen": "Gemini_Generated_Image_wge1rhwge1rhwge1.jpeg"
+ },
+ "saludando": {
+  "archivo": "saludando.png",
+  "w": 651,
+  "h": 1152,
+  "origen": "Gemini_Generated_Image_wjkiwtwjkiwtwjki.jpeg"
+ }
+}
