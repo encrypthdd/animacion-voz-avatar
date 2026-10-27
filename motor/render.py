@@ -225,7 +225,7 @@ class Video:
         self._subs(img, i / FPS)
         return img
 
-    def encode(self, salida, progreso=True):
+    def encode(self, salida, progreso=True, cb=None):
         total = self.NF + 10
         audio = os.path.join(self.datos, 'voz.mp3')
         p = subprocess.Popen(
@@ -237,21 +237,30 @@ class Video:
         try:
             for i in range(total):
                 p.stdin.write(self.frame(i).tobytes())
+                if cb is not None and i % 5 == 0:
+                    cb(i, total)
                 if progreso and i % 150 == 0:
                     print(f'  {i}/{total}', flush=True)
-        except BrokenPipeError:
-            pass          # con -shortest ffmpeg cierra al agotarse el audio
+        except OSError:
+            # Con -shortest ffmpeg cierra la entrada al agotarse el audio. En
+            # Windows eso no siempre llega como BrokenPipeError: puede salir
+            # como OSError errno 22, y capturar solo el primero marcaba como
+            # fallido un video que estaba bien. Quien decide es el codigo de
+            # salida de ffmpeg, no esta excepcion.
+            pass
         try:
             p.stdin.close()
-        except BrokenPipeError:
+        except OSError:
             pass
         p.wait()
         return p.returncode
 
 
-def producir(datos, salida, cfg=None, progreso=True):
+def producir(datos, salida, cfg=None, progreso=True, cb=None):
     v = Video(datos, cfg)
-    rc = v.encode(salida, progreso)
+    rc = v.encode(salida, progreso, cb)
+    if rc == 0 and (not os.path.exists(salida) or os.path.getsize(salida) < 10000):
+        raise RuntimeError('ffmpeg terminó sin error pero el archivo está vacío')
     return rc, v
 
 

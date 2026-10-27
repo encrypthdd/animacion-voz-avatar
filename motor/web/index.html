@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estudio de Avatares</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/estilo.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<header class="cabecera">
+  <div class="marca">
+    <svg viewBox="0 0 24 24" class="logo" aria-hidden="true">
+      <path d="M12 2a5 5 0 0 1 5 5v3a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5Z"/>
+      <path d="M4 11a8 8 0 0 0 16 0M12 19v3"/>
+    </svg>
+    <div>
+      <h1>Estudio de Avatares</h1>
+      <p>De un guion a un video vertical, en tu equipo</p>
+    </div>
+  </div>
+  <a class="enlace-salida" href="#previo">Ver resultado</a>
+</header>
+
+<main class="disposicion">
+  <div class="columna-pasos">
+
+    <!-- 1 ───────────────────────────────── avatar principal -->
+    <section class="tarjeta" style="--i:0" aria-labelledby="t1">
+      <div class="titulo-paso"><span class="num">1</span>
+        <div><h2 id="t1">Avatar que habla</h2>
+          <p class="ayuda">Cuerpo entero, fondo plano y cara de frente. Se miden ojos, boca y cejas para poder animarlo.</p></div>
+      </div>
+
+      <div class="soltar" id="soltar-avatar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <p><strong>Arrastra una imagen aquí</strong></p>
+        <label class="boton secundario">
+          Elegir archivo
+          <input type="file" id="file-avatar" class="archivo" accept="image/png,image/jpeg,image/webp">
+        </label>
+        <p class="mini">PNG, JPG o WEBP · hasta 40 MB</p>
+      </div>
+
+      <ul class="rejilla" id="lista-avatares" role="list"></ul>
+      <p class="vacio" id="vacio-avatares">Todavía no hay ningún avatar medido.</p>
+    </section>
+
+    <!-- 2 ───────────────────────────────── poses -->
+    <section class="tarjeta" style="--i:1" aria-labelledby="t2">
+      <div class="titulo-paso"><span class="num">2</span>
+        <div><h2 id="t2">Poses de recurso <em>· opcional</em></h2>
+          <p class="ayuda">El mismo personaje en otras poses. Entran en cortes de 2 segundos entre frases; no mueven la boca, así que valen de perfil o con la boca cerrada.</p></div>
+      </div>
+
+      <div class="soltar compacto" id="soltar-pose">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <p><strong>Arrastra las imágenes aquí</strong></p>
+        <label class="boton secundario">
+          Elegir archivos
+          <input type="file" id="file-pose" class="archivo" accept="image/png,image/jpeg,image/webp" multiple>
+        </label>
+      </div>
+
+      <ul class="rejilla poses" id="lista-poses" role="list"></ul>
+      <label class="interruptor">
+        <input type="checkbox" id="usar-recursos" checked>
+        <span class="pista" aria-hidden="true"></span>
+        <span>Intercalar poses en el montaje</span>
+      </label>
+    </section>
+
+    <!-- 3 ───────────────────────────────── voz -->
+    <section class="tarjeta" style="--i:2" aria-labelledby="t3">
+      <div class="titulo-paso"><span class="num">3</span>
+        <div><h2 id="t3">Voz</h2>
+          <p class="ayuda">Escucha antes de elegir. Todas son neuronales y gratuitas.</p></div>
+      </div>
+
+      <div class="filtros">
+        <div class="segmentado" role="group" aria-label="Género de la voz">
+          <button type="button" class="activo" data-genero="">Todas</button>
+          <button type="button" data-genero="femenino">Femenina</button>
+          <button type="button" data-genero="masculino">Masculina</button>
+        </div>
+        <label class="campo">
+          <span>País</span>
+          <select id="pais"><option value="">Cualquiera</option></select>
+        </label>
+      </div>
+
+      <ul class="voces" id="lista-voces" role="listbox" aria-label="Voces disponibles"></ul>
+      <audio id="reproductor" hidden></audio>
+    </section>
+
+    <!-- 4 ───────────────────────────────── guion -->
+    <section class="tarjeta" style="--i:3" aria-labelledby="t4">
+      <div class="titulo-paso"><span class="num">4</span>
+        <div><h2 id="t4">Guion y estilo</h2>
+          <p class="ayuda">Escribe con tildes y puntuación: la voz entona con ellas, y los cortes de cámara y de subtítulo salen de los puntos.</p></div>
+      </div>
+
+      <label class="campo">
+        <span>Título en pantalla <em>· opcional</em></span>
+        <input type="text" id="titulo" maxlength="60" placeholder="3 ganchos que no fallan">
+      </label>
+
+      <label class="campo">
+        <span>Guion</span>
+        <textarea id="guion" rows="7" maxlength="4000" placeholder="Nueve de cada diez videos se pierden en los primeros tres segundos.&#10;No es el algoritmo. Es tu gancho."></textarea>
+        <small class="contador"><span id="cuenta">0</span> / 4000 · <span id="estimado">0 s</span> aprox.</small>
+      </label>
+
+      <fieldset class="campo">
+        <legend>Fondo</legend>
+        <div class="fondos" id="fondos" role="radiogroup" aria-label="Fondo"></div>
+      </fieldset>
+
+      <div class="dos">
+        <label class="campo">
+          <span>Cámara</span>
+          <select id="planos">
+            <option value="si">Alterna planos</option>
+            <option value="completo">Siempre cuerpo entero</option>
+            <option value="medio">Siempre plano medio</option>
+            <option value="cerca">Siempre primer plano</option>
+          </select>
+        </label>
+        <label class="campo">
+          <span>Velocidad de habla · <output id="vel-val">+9%</output></span>
+          <input type="range" id="velocidad" min="-20" max="30" step="1" value="9">
+        </label>
+      </div>
+    </section>
+
+    <button class="boton principal grande" id="generar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3Z"/></svg>
+      Generar video
+    </button>
+    <p class="aviso-error" id="error-global" role="alert" hidden></p>
+  </div>
+
+  <!-- ───────────────────────────────── previo -->
+  <aside class="previo" id="previo" aria-live="polite">
+    <div class="marco">
+      <div class="pantalla" id="pantalla">
+        <div class="reposo" id="reposo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M10 9l5 3-5 3V9Z"/></svg>
+          <p>Tu video aparecerá aquí</p>
+        </div>
+        <video id="video" controls playsinline hidden></video>
+      </div>
+      <div class="progreso" id="progreso" hidden>
+        <div class="barra"><i id="barra-i"></i></div>
+        <p id="progreso-msg">Preparando…</p>
+      </div>
+    </div>
+    <div class="acciones" id="acciones" hidden>
+      <a class="boton principal" id="descargar" download="avatar.mp4">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        Descargar MP4
+      </a>
+      <button class="boton secundario" id="otro">Hacer otro</button>
+    </div>
+    <dl class="ficha" id="ficha" hidden></dl>
+  </aside>
+</main>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

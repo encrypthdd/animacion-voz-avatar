@@ -1,12 +1,8 @@
-# titulo: 3 ganchos que no fallan
+# titulo: Saludos
 # voz: es-MX-JorgeNeural
 # fondo: violeta
 # avatar: base, pulgar
 
-Nueve de cada diez videos se pierden en los primeros tres segundos.
-No es el algoritmo. Es tu gancho.
-Te doy los tres que nunca fallan.
-Uno: abre con una pregunta incómoda.
-Dos: promete algo concreto.
-Tres: muestra el resultado antes de explicarlo.
-Guárdalo, que lo vas a necesitar.
+Hola buenos dias princesa como amaneces? ya desayunaste?
+y el gordito como se porta? 
+jajajaja estoy haciendo una prueba de mi nueva aplicacion para animar avatar

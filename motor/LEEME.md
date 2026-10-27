@@ -28,7 +28,22 @@ Para una sola imagen suelta: `python medir.py ruta.png nombre`.
 
 Esas imágenes no se pierden: sirven como **poses de recurso** (ver más abajo).
 
-## Uso
+## Interfaz web
+
+```
+pip install flask          # una sola vez
+python app.py              # -> http://127.0.0.1:5000
+```
+
+Todo desde el navegador: subir el avatar, subir poses, escuchar y elegir voz,
+escribir el guion, ver el video y descargarlo. Se corta con `Ctrl+C`.
+
+Solo escucha en `127.0.0.1`, así que no queda expuesta a la red.
+
+Cada video generado desde la web se guarda en `../salida/web_<id>.mp4`. Se
+acumulan: bórralos de vez en cuando.
+
+## Uso por línea de comandos
 
 ```
 python producir.py              # hace todos los guiones que lo necesiten
@@ -96,6 +111,8 @@ reaprovecha. Si borras `cache/`, se regenera sola.
 | `producir.py` | Lotes: recorre `guiones/`, decide qué rehacer |
 | `crear.py` | Un guion: cabecera, voz, envolvente, render |
 | `render.py` | Cámara, fondo, subtítulos y codificación |
+| `app.py` | Servidor web: envuelve todo lo de abajo |
+| `web/` | La interfaz: `index.html`, `estilo.css`, `app.js` (sin dependencias) |
 | `estilo.py` | Fondos, planos de cámara, tipografía |
 | `medir.py` | Mide ojos, boca, cejas y barbilla de cualquier imagen |
 | `poses.py` | Recorta y cataloga las poses de recurso |
