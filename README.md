@@ -304,23 +304,36 @@ además se comprueba que el archivo no haya quedado vacío. `render.py`, método
 
 ## Seguridad
 
-Es una herramienta local, no un servicio. Esto es lo que hace el servidor,
-comprobado en `app.py`:
+Todo esto vive en [`motor/seguridad.py`](motor/seguridad.py) y está comprobado:
 
-- **Solo escucha en `127.0.0.1`** y con `debug=False`, así que no queda expuesta a
-  la red ni abre la consola de depuración de Flask.
-- **Las subidas están limitadas a 40 MB** (`MAX_CONTENT_LENGTH`) y a extensiones
-  `.png`, `.jpg`, `.jpeg` y `.webp`.
-- **Los nombres de archivo se sanean**: se quitan los acentos y todo lo que no sea
-  letra, número, guion o guion bajo, así que una subida no puede escribir fuera de
-  su carpeta.
-- **La ruta `/media/` comprueba que el destino quede dentro del proyecto** antes de
-  servir nada.
-- **El identificador de voz se valida** contra la lista real antes de llamar a
-  `edge-tts`.
+| Riesgo | Control |
+|---|---|
+| Accesos no autorizados | Contraseña (`ESTUDIO_CLAVE`), sesión firmada de 12 h, cookie `HttpOnly` + `SameSite=Lax`. 8 intentos cada 15 min |
+| Quemar la CPU | 2 renders simultáneos como máximo, 6 por IP cada 15 min, guion de 1500 caracteres y 100 s de video |
+| Avalancha de peticiones | Límites por IP y por tipo de acción, con `Retry-After` |
+| Imágenes maliciosas | Se abre y verifica la imagen, no solo la extensión. Tope de 40 M de píxeles contra bombas de descompresión |
+| Escapar del directorio | Nombres saneados y rutas servidas comprobadas dentro del proyecto |
+| Ataques desde el navegador | `CSP`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` |
+| Disco lleno | Los videos generados se borran a las 12 horas |
 
-No hay autenticación ni cifrado, porque no hay nada que atender fuera de tu equipo.
-**Si la publicas en una red, eso cambia por completo** y habría que añadirlos.
+Un render consumía hasta **38 minutos de CPU en una sola petición** y no había tope
+de renders a la vez. Eso era suficiente para tumbar el servidor con diez peticiones,
+y es lo que arreglan los límites de arriba.
+
+> [!WARNING]
+> **Un DDoS no se para aquí.** La saturación de red se frena antes, en Cloudflare o
+> en Nginx; un proceso de Python no puede defenderse de eso. La guía de despliegue
+> explica cómo montar esa capa.
+
+**Lo que no cubre:** no hay cifrado de los videos en disco ni usuarios separados.
+Quien entra, ve y descarga todo lo generado. Es una herramienta personal.
+
+## Ponerlo en un servidor
+
+[**docs/despliegue-ubuntu.pdf**](docs/despliegue-ubuntu.pdf) — guía de 12 páginas para
+desplegarlo en un Ubuntu Server en casa con salida a internet: systemd, Nginx,
+túnel de Cloudflare sin abrir puertos del router, cortafuegos y resolución de
+problemas.
 
 ---
 

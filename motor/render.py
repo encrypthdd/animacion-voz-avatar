@@ -3,10 +3,11 @@
 import json, math, os, subprocess, sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import avatar, anim, estilo, poses
+import avatar, anim, entorno, estilo, poses
+import entorno
 
 W, H, FPS = 1080, 1920, 30
-FF = r"C:\Users\cflores\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe"
+FF = entorno.ffmpeg()
 DURO = set('.;:!?\u2026')          # fin de frase
 
 

@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """Fondos, planos de camara y tipografia."""
 import numpy as np
+
+import entorno
 from PIL import Image
 
-FUENTE = r"C:\Windows\Fonts\seguibl.ttf"
+FUENTE = entorno.fuente()
 
 # ---------------- fondos ----------------
 # (arriba, abajo, resplandor)

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar · Estudio de Avatares</title>
+<style>
+  /* Esta página es autocontenida a propósito: así nada bajo /web/ necesita
+     servirse sin sesión. */
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--violeta:#7C3AED;--violeta-claro:#9D6BFF;--rosa:#EC4899;--indigo:#6366F1;
+        --fondo:#09080F;--texto:#F2EFFB;--suave:#A8A2C2;--borde:rgba(255,255,255,.10)}
+  body{min-height:100vh;display:grid;place-items:center;padding:24px;
+       background:var(--fondo);color:var(--texto);overflow:hidden;
+       font:400 16px/1.55 Inter,system-ui,"Segoe UI",Roboto,sans-serif}
+  .aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;
+    background:radial-gradient(120% 80% at 50% -10%,#19132e 0%,var(--fondo) 60%)}
+  .aurora i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;
+    animation:deriva 26s ease-in-out infinite alternate}
+  .aurora i:nth-child(1){width:46vw;height:46vw;left:-10vw;top:-8vw;background:var(--violeta)}
+  .aurora i:nth-child(2){width:38vw;height:38vw;right:-8vw;top:18vh;background:var(--rosa);
+    animation-duration:33s;animation-delay:-8s;opacity:.34}
+  @keyframes deriva{from{transform:translate3d(0,0,0) scale(1)}
+                    to{transform:translate3d(6vw,5vh,0) scale(1.18)}}
+  .caja{width:100%;max-width:392px;background:rgba(255,255,255,.045);
+    border:1px solid var(--borde);border-radius:24px;padding:38px 32px;
+    backdrop-filter:blur(14px);box-shadow:0 18px 50px -12px rgba(0,0,0,.65);
+    animation:entrar .55s cubic-bezier(.22,1,.36,1)}
+  @keyframes entrar{from{opacity:0;transform:translateY(18px) scale(.98)}}
+  .logo{width:56px;height:56px;margin:0 auto 20px;border-radius:18px;display:grid;
+    place-items:center;background:linear-gradient(145deg,var(--violeta),var(--rosa));
+    box-shadow:0 12px 30px -10px rgba(236,72,153,.8)}
+  .logo svg{width:28px;height:28px;fill:none;stroke:#fff;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  h1{font-size:21px;font-weight:700;text-align:center;letter-spacing:-.02em}
+  p.sub{text-align:center;color:var(--suave);font-size:13.5px;margin-top:7px}
+  label{display:block;font-size:13px;font-weight:600;color:var(--suave);
+    margin:26px 0 7px}
+  input{width:100%;min-height:48px;padding:12px 15px;border-radius:11px;
+    background:rgba(0,0,0,.34);border:1px solid var(--borde);color:var(--texto);
+    font:400 16px Inter,system-ui,sans-serif;transition:border-color .18s,box-shadow .18s}
+  input:hover{border-color:rgba(255,255,255,.2)}
+  input:focus{outline:none;border-color:var(--violeta-claro);
+    box-shadow:0 0 0 3px rgba(124,58,237,.22)}
+  button{width:100%;min-height:50px;margin-top:20px;border:0;border-radius:999px;
+    color:#fff;font:600 15.5px Inter,system-ui,sans-serif;cursor:pointer;
+    background:linear-gradient(135deg,var(--violeta),var(--rosa));
+    box-shadow:0 10px 26px -10px rgba(236,72,153,.75);
+    transition:transform .18s,box-shadow .18s}
+  button:hover{transform:translateY(-2px);box-shadow:0 16px 34px -10px rgba(236,72,153,.9)}
+  button:active{transform:translateY(1px)}
+  :focus-visible{outline:2px solid var(--violeta-claro);outline-offset:3px}
+  .pie{margin-top:22px;text-align:center;font-size:12px;color:#726C8C;line-height:1.6}
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="aurora" aria-hidden="true"><i></i><i></i></div>
+
+<main class="caja">
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24">
+      <path d="M12 2a5 5 0 0 1 5 5v3a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5Z"/>
+      <path d="M4 11a8 8 0 0 0 16 0M12 19v3"/>
+    </svg>
+  </div>
+  <h1>Estudio de Avatares</h1>
+  <p class="sub">Esta instalación pide contraseña</p>
+
+  <form method="post" action="/entrar">
+    <label for="clave">Contraseña</label>
+    <input id="clave" name="clave" type="password" autocomplete="current-password"
+           required autofocus maxlength="200">
+    <button type="submit">Entrar</button>
+  </form>
+
+  <p class="pie">La sesión dura 12 horas.<br>
+     Se define con la variable <code>ESTUDIO_CLAVE</code>.</p>
+</main>
+</body>
+</html>

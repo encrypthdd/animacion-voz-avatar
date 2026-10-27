@@ -10,7 +10,7 @@ import asyncio, io, json, os, re, threading, time, traceback, unicodedata, uuid
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
-import avatar, crear, estilo, medir, poses, render
+import avatar, crear, estilo, medir, poses, render, seguridad
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, 'web')
@@ -18,7 +18,7 @@ SALIDA = os.path.join(AQUI, '..', 'salida')
 MUESTRAS = os.path.join(AQUI, 'cache', 'muestras')
 
 app = Flask(__name__, static_folder=None)
-app.config['MAX_CONTENT_LENGTH'] = 40 * 1024 * 1024      # 40 MB por subida
+CLAVE, CLAVE_GENERADA = seguridad.configurar(app, SALIDA)
 
 TRABAJOS = {}
 _lock = threading.Lock()
@@ -114,6 +114,10 @@ def api_avatar():
         return jsonify({'ok': False, 'error': 'Formato no admitido. Usa PNG, JPG o WEBP.'}), 400
     ruta = os.path.join(carpeta, nombre + ext)
     f.save(ruta)
+    mal = seguridad.revisar_imagen(ruta)
+    if mal:
+        os.remove(ruta)
+        return jsonify({'ok': False, 'error': mal}), 400
     try:
         d, _ = medir.medir(ruta, nombre)
     except medir.NoMedible as e:
@@ -146,6 +150,10 @@ def api_pose():
     ext = os.path.splitext(f.filename)[1].lower() or '.png'
     ruta = os.path.join(poses.FUENTE, nombre + ext)
     f.save(ruta)
+    mal = seguridad.revisar_imagen(ruta)
+    if mal:
+        os.remove(ruta)
+        return jsonify({'ok': False, 'error': mal}), 400
     try:
         im, _ = poses.recortar(ruta)
         os.makedirs(poses.DESTINO, exist_ok=True)
@@ -195,6 +203,11 @@ def _trabajar(tid, cfg, texto, salida):
     try:
         paso('voz', 4, 'Generando la voz…')
         datos = crear.preparar(texto, cfg, hablar=False)
+        pal = json.load(open(os.path.join(datos, 'words.json'), encoding='utf-8'))
+        dur = (pal[-1]['t'] + pal[-1]['d']) if pal else 0
+        if dur > seguridad.MAX_SEGUNDOS:
+            raise RuntimeError(f'El guion da {dur:.0f} s de video y el máximo son '
+                               f'{seguridad.MAX_SEGUNDOS} s. Acórtalo.')
         paso('render', 8, 'Montando el video…')
 
         def cb(i, total):
@@ -215,6 +228,8 @@ def _trabajar(tid, cfg, texto, salida):
         traceback.print_exc()
         with _lock:
             TRABAJOS[tid].update(estado='error', pct=0, mensaje=str(e))
+    finally:
+        seguridad.soltar_turno()
 
 
 @app.post('/api/generar')
@@ -223,8 +238,9 @@ def api_generar():
     texto = (d.get('guion') or '').strip()
     if len(texto) < 10:
         return jsonify({'error': 'Escribe un guion de al menos 10 caracteres.'}), 400
-    if len(texto) > 4000:
-        return jsonify({'error': 'El guion es demasiado largo (máximo 4000 caracteres).'}), 400
+    if len(texto) > seguridad.MAX_CARACTERES:
+        return jsonify({'error': 'El guion es demasiado largo (máximo '
+                        f'{seguridad.MAX_CARACTERES} caracteres).'}), 400
     elegidos = [n for n in (d.get('avatares') or []) if n in avatar.disponibles()]
     if not elegidos:
         return jsonify({'error': 'Elige al menos un avatar que pueda hablar.'}), 400
@@ -244,14 +260,23 @@ def api_generar():
     except (TypeError, ValueError):
         cfg['rate'] = '+9%'
 
-    tid = uuid.uuid4().hex[:12]
+    if not seguridad.tomar_turno():
+        return jsonify({'error': 'El servidor está montando otros videos. '
+                        'Prueba en un par de minutos.'}), 429
+
+    tid = uuid.uuid4().hex
     os.makedirs(SALIDA, exist_ok=True)
+    seguridad.purgar_videos(SALIDA)
     salida = os.path.join(SALIDA, f'web_{tid}.mp4')
     with _lock:
         TRABAJOS[tid] = {'estado': 'cola', 'pct': 0, 'mensaje': 'En cola…',
                          'archivo': salida}
-    threading.Thread(target=_trabajar, args=(tid, cfg, texto, salida),
-                     daemon=True).start()
+    try:
+        threading.Thread(target=_trabajar, args=(tid, cfg, texto, salida),
+                         daemon=True).start()
+    except Exception:
+        seguridad.soltar_turno()
+        raise
     return jsonify({'id': tid})
 
 
@@ -289,4 +314,10 @@ def api_descargar(tid):
 
 if __name__ == '__main__':
     print('Estudio de avatares -> http://127.0.0.1:5000')
+    if CLAVE_GENERADA:
+        print()
+        print('  No hay ESTUDIO_CLAVE, así que se generó una para esta sesión:')
+        print(f'      {CLAVE}')
+        print('  Cambia al arrancar. Para fijarla:  set ESTUDIO_CLAVE=tu-clave')
+        print()
     app.run(host='127.0.0.1', port=5000, threaded=True, debug=False)

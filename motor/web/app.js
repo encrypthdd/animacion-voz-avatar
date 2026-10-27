@@ -8,6 +8,16 @@ const ico = {
   carga: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
 };
 
+async function pedir(url, opciones) {
+  const r = await fetch(url, opciones);
+  if (r.status === 401) { location.href = '/entrar'; throw new Error('sesión caducada'); }
+  if (r.status === 429) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.error || 'Demasiadas peticiones seguidas. Espera un poco.');
+  }
+  return r;
+}
+
 const estado = {
   voces: [], genero: '', pais: '', voz: null,
   avatares: [], elegidos: new Set(),
@@ -18,7 +28,7 @@ const estado = {
 async function arrancar() {
   let d;
   try {
-    d = await (await fetch('/api/inicio')).json();
+    d = await (await pedir('/api/inicio')).json();
   } catch (e) {
     return error('No se pudo contactar con el servidor. ¿Sigue corriendo app.py?');
   }
@@ -112,7 +122,7 @@ function conectarSubida(zonaSel, inputSel, url, multiple) {
       const prev = zona.querySelector('p strong').textContent;
       zona.querySelector('p strong').textContent = 'Procesando ' + f.name + '…';
       try {
-        const r = await (await fetch(url, { method: 'POST', body: fd })).json();
+        const r = await (await pedir(url, { method: 'POST', body: fd })).json();
         if (!r.ok) {
           error(r.error || 'No se pudo procesar la imagen.');
         } else if (url.includes('avatar')) {
@@ -256,7 +266,7 @@ async function generar() {
   avance(2, 'Enviando…');
 
   try {
-    const r = await (await fetch('/api/generar', {
+    const r = await (await pedir('/api/generar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         guion, titulo: $('#titulo').value.trim(), voz: estado.voz,
@@ -287,7 +297,7 @@ function fallo(msg) {
 
 async function sondear(id) {
   try {
-    const t = await (await fetch('/api/trabajo/' + id)).json();
+    const t = await (await pedir('/api/trabajo/' + id)).json();
     if (t.estado === 'error') return fallo(t.mensaje);
     avance(t.pct, t.mensaje);
     if (t.estado !== 'listo') return setTimeout(() => sondear(id), 700);

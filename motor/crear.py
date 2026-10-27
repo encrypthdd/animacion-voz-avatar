@@ -11,11 +11,13 @@ El guion puede llevar opciones en las primeras lineas:
     # fondo: violeta
     # planos: si
 """
-import asyncio, hashlib, json, os, subprocess, sys
+import asyncio, hashlib, json, os, subprocess, sys, time
 import numpy as np
 import edge_tts
 
-FF = r"C:\Users\cflores\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe"
+import entorno
+
+FF = entorno.ffmpeg()
 AQUI = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(AQUI, 'cache')
 
@@ -102,7 +104,23 @@ def preparar(texto, cfg, hablar=True):
     os.makedirs(destino, exist_ok=True)
     if hablar:
         print(f"  voz nueva ({cfg['voz']})...")
-    pal = asyncio.run(_voz(texto, cfg, destino))
+    # El endpoint de voz de Microsoft no es oficial y rechaza peticiones de vez
+    # en cuando con "No audio was received". Casi siempre va a la segunda.
+    ultimo = None
+    for intento in range(3):
+        try:
+            pal = asyncio.run(_voz(texto, cfg, destino))
+            break
+        except Exception as e:
+            ultimo = e
+            if hablar:
+                print(f'  reintentando ({intento + 1}/3)…')
+            time.sleep(1.5 * (intento + 1))
+    else:
+        raise RuntimeError(
+            'El servicio de voz de Microsoft no respondió después de 3 intentos. '
+            'Suele ser pasajero: vuelve a darle en un minuto. '
+            f'(detalle: {ultimo})')
     _envolvente(destino)
     if hablar:
         print(f"  {len(pal)} palabras, {pal[-1]['t']+pal[-1]['d']:.1f}s")

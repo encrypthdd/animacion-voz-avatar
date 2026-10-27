@@ -31,9 +31,13 @@ Esas imágenes no se pierden: sirven como **poses de recurso** (ver más abajo).
 ## Interfaz web
 
 ```
-pip install flask          # una sola vez
-python app.py              # -> http://127.0.0.1:5000
+pip install flask                       # una sola vez
+set ESTUDIO_CLAVE=tu-contraseña         # Linux/Mac: export
+python app.py                           # -> http://127.0.0.1:5000
 ```
+
+Sin `ESTUDIO_CLAVE` se genera una al azar en cada arranque y se imprime en consola:
+cómodo en local, inútil en un servicio.
 
 Todo desde el navegador: subir el avatar, subir poses, escuchar y elegir voz,
 escribir el guion, ver el video y descargarlo. Se corta con `Ctrl+C`.
@@ -112,6 +116,8 @@ reaprovecha. Si borras `cache/`, se regenera sola.
 | `crear.py` | Un guion: cabecera, voz, envolvente, render |
 | `render.py` | Cámara, fondo, subtítulos y codificación |
 | `app.py` | Servidor web: envuelve todo lo de abajo |
+| `seguridad.py` | Acceso, límites por IP, validación de imágenes, cabeceras |
+| `entorno.py` | Resuelve FFmpeg y la tipografía según el sistema |
 | `web/` | La interfaz: `index.html`, `estilo.css`, `app.js` (sin dependencias) |
 | `estilo.py` | Fondos, planos de cámara, tipografía |
 | `medir.py` | Mide ojos, boca, cejas y barbilla de cualquier imagen |
@@ -248,6 +254,27 @@ meseta central.
 - Fuerza de las cejas → `rng.uniform(2.4, 4.3)` en `anim.py` (tope 5.0)
 - Colores de fondo → `FONDOS` en `estilo.py`
 - Tamaño y posición de subtítulos → `fuente` y la `y` de `_subs` en `render.py`
+
+## Seguridad
+
+Los controles están en `seguridad.py`, con sus constantes arriba del archivo:
+
+| Constante | Para qué |
+|---|---|
+| `MAX_RENDERS` | Renders a la vez. Cada uno ocupa un núcleo entero |
+| `MAX_CARACTERES` | Tope del guion. 4000 daban 38 minutos de CPU en una petición |
+| `MAX_SEGUNDOS` | Duración máxima, comprobada con el audio ya locutado |
+| `MAX_PIXELES` | Contra bombas de descompresión |
+| `LIMITES` | Peticiones por IP y por tipo de acción |
+| `HORAS_VIDEO` | Cuándo se borran los videos generados |
+
+Variables de entorno: `ESTUDIO_CLAVE`, `ESTUDIO_SECRETO`, `ESTUDIO_PROXY`,
+`ESTUDIO_HTTPS`, `ESTUDIO_FFMPEG`, `ESTUDIO_FUENTE`.
+
+> `ESTUDIO_PROXY=1` solo si hay un proxy inverso delante. Sin él, ese encabezado lo
+> escribe quien hace la petición y los límites por IP dejan de servir.
+
+Para desplegarlo con salida a internet: `docs/despliegue-ubuntu.pdf`.
 
 ## Limitaciones actuales
 
