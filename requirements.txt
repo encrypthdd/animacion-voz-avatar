@@ -1,0 +1,7 @@
+# edge-tts 7.x es obligatorio: el parámetro boundary="WordBoundary" no existe
+# en 6.x, y sin él no hay tiempos por palabra (ni visemas ni subtítulos).
+edge-tts>=7.0
+numpy>=1.24
+pillow>=10.0
+scipy>=1.10
+flask>=3.0

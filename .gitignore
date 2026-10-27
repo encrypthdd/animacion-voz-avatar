@@ -1,0 +1,43 @@
+# ─── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+
+# ─── Derivados del motor ─────────────────────────────────────────────────
+# Todo esto se regenera. Las fuentes (motor/avatares/, motor/poses_fuente/)
+# sí se versionan; lo medido y lo recortado, no.
+#   python medir.py    -> motor/rigs/
+#   python poses.py    -> motor/poses/
+motor/rigs/
+motor/poses/
+
+# Voz cacheada: se vuelve a pedir sola la primera vez que haga falta.
+motor/cache/
+
+# Temporal de la envolvente de audio, por si queda huérfano.
+motor/**/voz.raw
+
+# ─── Videos generados ────────────────────────────────────────────────────
+# Pesan megas y salen de los guiones. No van al repositorio.
+salida/
+*.mp4
+
+# ─── Imágenes de trabajo ─────────────────────────────────────────────────
+# Las de control que dejan medir.py y mouthline: sirven para revisar a ojo,
+# no para versionar. Las del README viven en docs/img/ y sí se suben.
+motor/**/*_check.png
+motor/mouthline_check.png
+
+# ─── Editores y sistema ──────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+.DS_Store

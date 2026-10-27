@@ -4,7 +4,8 @@
     python poses.py            # procesa lo que haya nuevo
     python poses.py --forzar
 
-Las imagenes se buscan en `poses_fuente/` y en la carpeta del proyecto.
+Las imagenes se leen de `poses_fuente/`. El nombre del archivo es el
+nombre de la pose.
 Son planos de recurso: el personaje NO habla en ellas, se usan en tramos cortos
 entre frases. Por eso valen poses de perfil o con la boca cerrada.
 """
@@ -18,14 +19,6 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 FUENTE = os.path.join(AQUI, 'poses_fuente')
 DESTINO = os.path.join(AQUI, 'poses')
 CATALOGO = os.path.join(DESTINO, 'poses.json')
-
-# nombres para las imagenes que ya estaban en el proyecto
-CONOCIDAS = {
-    '7j1t8q': 'caminando',   'faauf8': 'sorprendido', 'ghz7m9': 'hombros',
-    'l0ezjx': 'pulgar',      'w3r3t1': 'caminando2',  'wge1rh': 'pensativo',
-    'wjkiwt': 'saludando',
-}
-
 
 def recortar(ruta):
     """Quita el fondo blanco y la sombra de suelo, conservando dientes y tenis.
@@ -77,17 +70,13 @@ def recortar(ruta):
 
 
 def nombre_de(ruta):
+    """El nombre del archivo es el nombre de la pose."""
     base = os.path.splitext(os.path.basename(ruta))[0]
-    for clave, nom in CONOCIDAS.items():
-        if clave in base:
-            return nom
     return base.lower().replace(' ', '_')
 
 
 def fuentes():
-    rutas = sorted(glob.glob(os.path.join(FUENTE, '*.[jp][pn]*g')))
-    rutas += sorted(glob.glob(os.path.join(AQUI, '..', 'Gemini_Generated_Image_*.jpeg')))
-    return rutas
+    return sorted(glob.glob(os.path.join(FUENTE, '*.[jp][pn]*g')))
 
 
 def preparar(forzar=False, hablar=True):
