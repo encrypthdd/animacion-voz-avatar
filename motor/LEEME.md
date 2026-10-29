@@ -166,10 +166,21 @@ Ampliar un JPEG de 1165 px a tamaño de impresión da justo lo que no se quiere:
 bordes blandos y escalones. Así que el recorte fiel se entrega, pero el
 resultado bueno sale de otro camino:
 
-1. **Detectar el soporte.** El logo está dentro de un círculo. Se ajusta ese
-   círculo por mínimos cuadrados con rechazo de puntos sueltos, y sale con una
-   precisión de 0,1 px. El alfa se calcula del círculo ideal, no de un umbral:
-   por eso el borde queda limpio y no serrado.
+1. **Encontrar el logo.** Los logos llegan de cuatro maneras, y cada una se
+   reconoce por su lado. Se prueban en orden, de la pista más fiable a la más
+   cara, y se usa la primera que devuelva una figura:
+
+   | Método | Cuándo entra | Fiabilidad |
+   |---|---|---|
+   | `alfa` | El PNG ya venía recortado: manda su propio canal alfa | la mejor |
+   | `fondo` | El fondo es de un solo color. Se inunda desde el borde, y sólo cuenta como fondo lo que toca el borde: así el ojo de una «o» no se abre | muy buena |
+   | `centro` | Soporte de color plano, como la pastilla redonda de un logo de perfil | buena |
+   | `modelo` | Un fondo que no es ninguna de las anteriores, una foto. Lo resuelve rembg | la peor: revísalo |
+
+   Luego, sea cual sea el método, se intenta ajustar un círculo a la máscara.
+   Si encaja —y encaja con cualquier pastilla redonda, venga de donde venga— el
+   alfa se calcula del círculo ideal en vez de la máscara medida, con una
+   precisión de 0,1 px: por eso ese borde queda limpio y no serrado.
 2. **Despegar el halo.** Los píxeles del borde llevan color del fondo mezclado
    dentro por el JPEG. Se sustituyen por el del píxel opaco más cercano; si no,
    queda una orla gris alrededor del recorte.
@@ -184,6 +195,12 @@ resultado bueno sale de otro camino:
 
 A partir del paso 4 el logo ya no tiene resolución: se dibuja igual de nítido a
 3 cm que a 30.
+
+Un detalle del paso 4 que costó encontrar: antes de buscar los contornos hay
+que rodear la máscara con un píxel de margen. Sin él, una figura que llega al
+borde del recorte devuelve contornos *abiertos*, y al cerrarlos el relleno
+par-impar los anula entre sí y la capa entera desaparece. Y el recorte de una
+silueta toca el borde siempre, porque se ajusta a la figura.
 
 ### Desde el navegador
 
@@ -211,6 +228,10 @@ las 12 horas.
 | `--sin-vector` | Sólo recortar el fondo, sin revectorizar |
 
 ### Dónde está el límite
+
+Si sale «No se reconoce ninguna figura clara», han fallado los cuatro métodos.
+Al fallar, la imagen subida **no se borra**: queda en `motor/cache/logos/` hasta
+la siguiente subida, que es lo único que permite averiguar por qué.
 
 Los tres iconos sociales ocupan unos 45 px en el original y el de Instagram es
 un degradado. Vectorizar un degradado de 45 px da bandas, no un degradado. A

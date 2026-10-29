@@ -62,43 +62,157 @@ def _ajustar_circulo(pts, vueltas=12):
     return float(cx), float(cy), r, n
 
 
-def _mancha_central(rgb):
-    """Máscara burda del soporte: lo que tiene el color del centro de la imagen."""
-    lab = cv2.cvtColor((rgb / 255.).astype(np.float32), cv2.COLOR_RGB2LAB)
+def _lab(rgb):
+    """La imagen en LAB, donde una distancia se parece a lo que ve el ojo."""
+    return cv2.cvtColor((rgb / 255.).astype(np.float32), cv2.COLOR_RGB2LAB)
+
+
+# Los logos llegan de cuatro maneras, y cada una se reconoce por su lado. Se
+# prueban en este orden, de la pista mas fiable a la mas costosa.
+METODOS = {
+    'alfa':   'la transparencia que ya traía el archivo',
+    'fondo':  'un fondo de un solo color',
+    'centro': 'la mancha de color del centro',
+    'modelo': 'un modelo de recorte automático',
+}
+
+
+def _mascara_alfa(alfa):
+    """El archivo ya venía recortado: su propio canal alfa manda."""
+    if alfa is None:
+        return None
+    m = alfa > 0.5
+    ocupa = float(m.mean())
+    # Un alfa opaco entero, o casi vacío, no dice nada: hay que buscar por otro lado.
+    if ocupa > 0.995 or ocupa < 0.005:
+        return None
+    return m.astype(np.uint8)
+
+
+def _mascara_fondo_plano(rgb, tol=7.0):
+    """Fondo de un color uniforme (el típico blanco): se inunda desde el borde.
+
+    Solo cuenta como fondo lo que toca el borde de la imagen. Así, un hueco
+    interior del mismo color —el ojo de una «o», el centro de un aro— se queda
+    dentro del logo en vez de abrirse un agujero.
+    """
+    lab = _lab(rgb)
+    h, w, _ = lab.shape
+    marco = np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]])
+    color = np.median(marco, axis=0)
+    if float((np.linalg.norm(marco - color, axis=1) < tol).mean()) < 0.92:
+        return None                       # el borde no es de un solo color
+    fondo = (np.linalg.norm(lab - color, axis=2) < tol).astype(np.uint8)
+    n, etiq, _, _ = cv2.connectedComponentsWithStats(fondo, 8)
+    if n < 2:
+        return None
+    tocan = set(etiq[0]) | set(etiq[-1]) | set(etiq[:, 0]) | set(etiq[:, -1])
+    tocan.discard(0)
+    if not tocan:
+        return None
+    m = (~np.isin(etiq, list(tocan))).astype(np.uint8)
+    ocupa = float(m.mean())
+    if ocupa < 0.004 or ocupa > 0.99:
+        return None
+    return m
+
+
+def _mascara_central(rgb, tol=7.0):
+    """Soporte de color plano, como la pastilla redonda de un logo de perfil."""
+    lab = _lab(rgb)
     h, w, _ = lab.shape
     # Mediana y no media: el centro de la imagen suele caer sobre una letra, y
     # un promedio ahí devuelve un color que no existe en el logo.
     ventana = lab[int(h * .3):int(h * .7), int(w * .3):int(w * .7)].reshape(-1, 3)
     centro = np.median(ventana, axis=0)
-    m = (np.linalg.norm(lab - centro, axis=2) < 7).astype(np.uint8)
+    m = (np.linalg.norm(lab - centro, axis=2) < tol).astype(np.uint8)
     k = max(9, (min(h, w) // 26) | 1)
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((k, k), np.uint8))
     n, etiq, est, _ = cv2.connectedComponentsWithStats(m, 8)
     if n < 2:
         return None
     mayor = 1 + int(np.argmax(est[1:, cv2.CC_STAT_AREA]))
+    if est[mayor, cv2.CC_STAT_AREA] < 0.05 * h * w:
+        return None
     comp = (etiq == mayor).astype(np.uint8)
     return cv2.morphologyEx(comp, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
 
 
-def detectar_soporte(rgb):
-    """Devuelve ('circulo', (cx, cy, r)) o ('silueta', máscara) o None."""
-    comp = _mancha_central(rgb)
-    if comp is None:
+def _mascara_modelo(rgb):
+    """Ultimo recurso: un fondo que no es plano ni una pastilla, una foto.
+
+    Lo resuelve rembg, que ya es una dependencia del equipo. Es lo más lento y
+    lo menos exacto de los cuatro, por eso va al final.
+    """
+    try:
+        from rembg import remove
+    except Exception:
         return None
-    cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    try:
+        salida = remove(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), only_mask=True)
+    except Exception:
+        return None
+    if salida is None or not hasattr(salida, 'shape'):
+        return None
+    if salida.ndim == 3:
+        salida = salida[..., -1]
+    m = (salida > 127).astype(np.uint8)
+    ocupa = float(m.mean())
+    if ocupa < 0.004 or ocupa > 0.995:
+        return None
+    return m
+
+
+def _limpiar_mascara(m, minimo=0.0015):
+    """Quita motas y tapa agujeros de ruido, pero respeta las piezas sueltas.
+
+    Un logotipo bien puede ser varias piezas —las letras de una palabra—, así
+    que no vale quedarse solo con la mayor.
+    """
+    if m is None:
+        return None
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    total = m.shape[0] * m.shape[1]
+    n, etiq, est, _ = cv2.connectedComponentsWithStats(m, 8)
+    if n < 2:
+        return None
+    grandes = [k for k in range(1, n) if est[k, cv2.CC_STAT_AREA] > minimo * total]
+    if not grandes:
+        return None
+    out = np.isin(etiq, grandes).astype(np.uint8)
+    return _quitar_motas(out, max(int(minimo * total * 0.2), 12))
+
+
+def _afinar_circulo(m):
+    """Si la máscara es un círculo, devuelve el círculo exacto; si no, None.
+
+    Merece la pena comprobarlo con cualquier máscara: cuando el logo es una
+    pastilla redonda, el círculo ajustado da un borde mucho mejor que el
+    contorno medido píxel a píxel.
+    """
+    cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not cnts:
         return None
     c = max(cnts, key=cv2.contourArea)
     area = cv2.contourArea(c)
-    if area < 0.05 * rgb.shape[0] * rgb.shape[1]:
-        return None
+    if area < 0.05 * m.shape[0] * m.shape[1] or area < 0.92 * float(m.sum()):
+        return None                        # hay mas piezas: no es una pastilla
     cx, cy, r, n = _ajustar_circulo(c.reshape(-1, 2))
-    # ¿El contorno es de verdad un círculo? Se compara el área medida con la del
-    # círculo ajustado: un recuadro o una silueta cualquiera fallan aquí.
     if n > 200 and abs(area - np.pi * r * r) / (np.pi * r * r) < 0.06:
-        return 'circulo', (cx, cy, r)
-    return 'silueta', comp
+        return cx, cy, r
+    return None
+
+
+def detectar_soporte(rgb, alfa=None):
+    """Devuelve (metodo, mascara) con el primer método que reconozca el logo."""
+    for nombre, buscar in (('alfa', lambda: _mascara_alfa(alfa)),
+                           ('fondo', lambda: _mascara_fondo_plano(rgb)),
+                           ('centro', lambda: _mascara_central(rgb)),
+                           ('modelo', lambda: _mascara_modelo(rgb))):
+        m = _limpiar_mascara(buscar())
+        if m is not None:
+            return nombre, m
+    return None, None
 
 
 def _cobertura_circulo(alto, ancho, cx, cy, r):
@@ -129,17 +243,56 @@ def _despegar_halo(rgb, alfa):
     return out
 
 
-def recortar(rgb, margen=1.0):
-    """Separa el logo del fondo. Devuelve (rgb, alfa, caja, soporte)."""
-    det = detectar_soporte(rgb)
-    if det is None:
+def cargar(ruta, max_lado=None):
+    """Lee la imagen. Devuelve (rgb uint8, alfa 0..1 o None).
+
+    Se lee sin tocar los canales para no perder la transparencia: si el logo ya
+    venía recortado, ese alfa es la mejor pista que hay.
+    """
+    datos = cv2.imread(ruta, cv2.IMREAD_UNCHANGED)
+    if datos is None:
+        raise RuntimeError('No se puede abrir la imagen: %s' % ruta)
+    if datos.dtype == np.uint16:
+        datos = (datos // 257).astype(np.uint8)
+    elif datos.dtype != np.uint8:
+        datos = np.clip(datos, 0, 255).astype(np.uint8)
+    if datos.ndim == 2:
+        datos = cv2.cvtColor(datos, cv2.COLOR_GRAY2BGR)
+    alfa = None
+    if datos.shape[2] == 4:
+        alfa = datos[..., 3].astype(np.float32) / 255.
+        datos = datos[..., :3]
+    elif datos.shape[2] != 3:
+        datos = datos[..., :3]
+    rgb = cv2.cvtColor(datos, cv2.COLOR_BGR2RGB)
+
+    # El trazado ya trabaja a varios aumentos del original, asi que partir de
+    # 4000 px no afina el dibujo: solo multiplica la memoria, el tiempo y el
+    # numero de curvas del SVG. Se reduce la entrada a un tamano razonable.
+    largo = max(rgb.shape[:2])
+    if max_lado and largo > max_lado:
+        f = max_lado / float(largo)
+        rgb = cv2.resize(rgb, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+        if alfa is not None:
+            alfa = cv2.resize(alfa, (rgb.shape[1], rgb.shape[0]),
+                              interpolation=cv2.INTER_AREA)
+    return rgb, alfa
+
+
+def recortar(rgb, alfa_origen=None, margen=1.0):
+    """Separa el logo del fondo. Devuelve (rgb, alfa, caja, soporte, metodo)."""
+    metodo, m = detectar_soporte(rgb, alfa_origen)
+    if m is None:
         raise RuntimeError(
-            'No se reconoce el soporte del logo en esta imagen. Recórtalo a mano '
-            'o pásalo ya con transparencia.')
-    tipo, dato = det
+            'No se reconoce ninguna figura clara en esta imagen. Se ha probado '
+            'con la transparencia del archivo, con un fondo de un solo color, '
+            'con la mancha de color del centro y con el recorte automático, y '
+            'ninguno la ha encontrado. Recórtala a mano, o súbela en PNG con el '
+            'fondo ya transparente.')
     h, w, _ = rgb.shape
-    if tipo == 'circulo':
-        cx, cy, r = dato
+    circulo = _afinar_circulo(m)
+    if circulo:
+        cx, cy, r = circulo
         r -= margen                                   # un pelo hacia dentro: el
         alfa = _cobertura_circulo(h, w, cx, cy, r)    # borde del JPEG está sucio
         x0, y0 = int(np.floor(cx - r)), int(np.floor(cy - r))
@@ -148,14 +301,23 @@ def recortar(rgb, margen=1.0):
         x1, y1 = min(x1, w), min(y1, h)
         soporte = ('circulo', (cx - x0, cy - y0, r))
     else:
-        m = cv2.erode(dato, np.ones((3, 3), np.uint8), iterations=max(int(margen), 1))
-        alfa = cv2.GaussianBlur(m.astype(np.float32), (0, 0), 0.6)
-        xs, ys = np.nonzero(m.any(0))[0], np.nonzero(m.any(1))[0]
+        duro = m
+        if metodo != 'alfa' and margen >= 1:
+            # Un archivo que ya venia transparente tiene el borde limpio; los
+            # demas llevan fondo mezclado en el ultimo pixel y conviene comerlo.
+            duro = cv2.erode(m, np.ones((3, 3), np.uint8), iterations=int(margen))
+            if not duro.any():
+                duro = m
+        if metodo == 'alfa':
+            alfa = np.minimum(alfa_origen, duro.astype(np.float32))
+        else:
+            alfa = cv2.GaussianBlur(duro.astype(np.float32), (0, 0), 0.6)
+        xs, ys = np.nonzero(duro.any(0))[0], np.nonzero(duro.any(1))[0]
         x0, x1, y0, y1 = int(xs[0]), int(xs[-1]) + 1, int(ys[0]), int(ys[-1]) + 1
         soporte = ('silueta', None)
     rec = rgb[y0:y1, x0:x1]
     alf = alfa[y0:y1, x0:x1]
-    return _despegar_halo(rec, alf), alf, (x0, y0, x1, y1), soporte
+    return _despegar_halo(rec, alf), alf, (x0, y0, x1, y1), soporte, metodo
 
 
 # ====================================================================== paleta
@@ -411,8 +573,13 @@ def _ajustar(pts, t1, t2, tol):
 def trazar(mask, escala=ESCALA, tol=TOL_TRAZO):
     """Contornos de una máscara convertidos en curvas, en píxeles del original."""
     anillos = []
-    for cont in measure.find_contours(mask.astype(np.float32), 0.5):
-        pts = np.c_[cont[:, 1], cont[:, 0]] / escala      # (fila, col) -> (x, y)
+    # El margen de un pixel no es un detalle: sin el, una figura que llega al
+    # borde del recorte devuelve contornos abiertos, y al cerrarlos el relleno
+    # par-impar los anula entre si y la capa entera desaparece. Y el recorte de
+    # una silueta toca el borde siempre, porque se ajusta a la figura.
+    relleno = np.pad(mask.astype(np.float32), 1)
+    for cont in measure.find_contours(relleno, 0.5):
+        pts = (np.c_[cont[:, 1], cont[:, 0]] - 1.0) / escala   # (fila,col)->(x,y)
         if len(pts) < 8:
             continue
         if np.linalg.norm(pts[0] - pts[-1]) < 1e-6:
@@ -601,33 +768,24 @@ def procesar(ruta, nombre=None, cm=10.0, ppp=300, colores=16, margen=1.0,
         if cb is not None:
             cb(pct, msg)
 
-    bgr = cv2.imread(ruta, cv2.IMREAD_COLOR)
-    if bgr is None:
-        raise RuntimeError('No se puede abrir la imagen: %s' % ruta)
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    # El trazado ya trabaja a varios aumentos del original, asi que partir de
-    # 4000 px no afina el dibujo: solo multiplica la memoria, el tiempo y el
-    # numero de curvas del SVG. Se recorta la entrada a un tamano razonable.
-    largo = max(rgb.shape[:2])
-    if max_lado and largo > max_lado:
-        f = max_lado / float(largo)
-        rgb = cv2.resize(rgb, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    rgb, alfa_origen = cargar(ruta, max_lado)
     nombre = nombre or os.path.splitext(os.path.basename(ruta))[0]
     dst = destino or os.path.join(SALIDA, nombre)
     os.makedirs(dst, exist_ok=True)
-    info('origen        %s  %dx%d px'
-         % (os.path.basename(ruta), rgb.shape[1], rgb.shape[0]))
+    info('origen        %s  %dx%d px%s'
+         % (os.path.basename(ruta), rgb.shape[1], rgb.shape[0],
+            '  (con alfa)' if alfa_origen is not None else ''))
 
-    paso(4, 'Buscando el borde del logo…')
-    rec, alfa, caja, soporte = recortar(rgb, margen)
+    paso(4, 'Buscando el logo dentro de la imagen…')
+    rec, alfa, caja, soporte, metodo = recortar(rgb, alfa_origen, margen)
     h, w, _ = rec.shape
     fiel = np.dstack([rec, (alfa * 255).round().clip(0, 255)]).astype(np.uint8)
     p_fiel = os.path.join(dst, nombre + '_transparente.png')
     guardar_png(p_fiel, fiel, ppp)
-    info('recorte       %s  %dx%d  (soporte: %s)'
-         % (os.path.basename(p_fiel), w, h, soporte[0]))
+    info('recorte       %s  %dx%d  (%s -> %s)'
+         % (os.path.basename(p_fiel), w, h, METODOS[metodo], soporte[0]))
     r = {'carpeta': dst, 'nombre': nombre, 'soporte': soporte[0],
-         'recorte': [w, h], 'fiel': os.path.basename(p_fiel)}
+         'metodo': metodo, 'recorte': [w, h], 'fiel': os.path.basename(p_fiel)}
     if sin_vector:
         paso(100, 'Listo')
         return r
@@ -641,10 +799,14 @@ def procesar(ruta, nombre=None, cm=10.0, ppp=300, colores=16, margen=1.0,
     capas_m = capas(rec, alfa, lab_pal, escala)
     base = rgb_pal[capas_m[0][0]]
 
+    # La capa de fondo solo se puede dar por pintada cuando el soporte es un
+    # circulo, porque entonces el disco la cubre entera. Con una silueta hay
+    # que trazarla como una figura mas, o el sticker sale agujereado.
+    pendientes = capas_m[1:] if soporte[0] == 'circulo' else capas_m
     figuras = []
-    for k, (i, m) in enumerate(capas_m[1:]):
-        paso(52 + int(26 * k / max(len(capas_m) - 1, 1)),
-             'Trazando las curvas… capa %d de %d' % (k + 1, len(capas_m) - 1))
+    for k, (i, m) in enumerate(pendientes):
+        paso(52 + int(26 * k / max(len(pendientes), 1)),
+             'Trazando las curvas… capa %d de %d' % (k + 1, len(pendientes)))
         anillos = trazar(m, escala)
         if anillos:
             figuras.append((rgb_pal[i], anillos))
@@ -658,7 +820,11 @@ def procesar(ruta, nombre=None, cm=10.0, ppp=300, colores=16, margen=1.0,
          % (os.path.basename(p_svg), os.path.getsize(p_svg) / 1024))
 
     paso(86, 'Dibujando el PNG al tamaño de impresión…')
-    lado = int(round(cm / 2.54 * ppp))
+    # El tamano pedido es el del lado mayor: asi el sticker cabe siempre en el
+    # cuadrado que se eligio. Si el logo no es cuadrado, el otro lado sale en
+    # proporcion, que es lo que se espera de un logo apaisado.
+    objetivo = int(round(cm / 2.54 * ppp))
+    lado = objetivo if w >= h else max(1, int(round(objetivo * w / float(h))))
     rgba = rasterizar(w, h, figuras, soporte, base, lado)
     if borde_mm > 0:
         rgba = con_borde(rgba, borde_mm / 25.4 * ppp)

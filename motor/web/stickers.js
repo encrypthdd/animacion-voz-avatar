@@ -152,8 +152,10 @@ function mostrar(r) {
     <div><dt>PNG</dt><dd>${r.px[0]} × ${r.px[1]} px · ${r.ppp} ppp</dd></div>
     <div><dt>Impreso</dt><dd>${r.cm[0]} × ${r.cm[1]} cm${troquel}</dd></div>
     <div><dt>SVG</dt><dd>${r.curvas} curvas · ${r.svg_kb} KB</dd></div>
-    <div><dt>Tintas</dt><dd><span class="muestras">${muestras}</span></dd></div>`;
+    <div><dt>Tintas</dt><dd><span class="muestras">${muestras}</span></dd></div>
+    <div><dt>Recorte</dt><dd${r.fiable ? '' : ' class="dudoso"'}>${r.metodo}</dd></div>`;
   $('#ficha').hidden = false;
+  $('#aviso-modelo').hidden = r.fiable;
   $('#previo').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 

@@ -333,16 +333,19 @@ def _trabajar_sticker(tid, origen, nombre, cm, borde_mm):
             TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo',
                                  carpeta=r['carpeta'], datos=r,
                                  archivos={r['png'], r['svg'], r['fiel']})
+        try:
+            os.remove(origen)          # salio bien: el logo subido ya no hace falta
+        except OSError:
+            pass
     except Exception as e:
+        # Al fallar NO se borra: sin la imagen no hay forma de averiguar por que
+        # no se reconocio. La purga de la siguiente subida se la lleva.
         traceback.print_exc()
+        print('sticker: fallo con %s' % origen)
         with _lock:
             TRABAJOS[tid].update(estado='error', pct=0, mensaje=str(e))
     finally:
         seguridad.soltar_turno()
-        try:
-            os.remove(origen)          # el logo subido ya no hace falta
-        except OSError:
-            pass
 
 
 @app.post('/api/sticker')
@@ -411,6 +414,8 @@ def api_trabajo_sticker(tid):
             'nombre_png': d['png'], 'nombre_svg': d['svg'],
             'px': d['px'], 'cm': d['cm_real'], 'ppp': d['ppp'],
             'cm_pedido': d['cm'], 'borde_mm': d['borde_mm'],
+            'metodo': sticker.METODOS.get(d['metodo'], d['metodo']),
+            'fiable': d['metodo'] != 'modelo',
             'curvas': d['curvas'], 'capas': d['capas'], 'paleta': d['paleta'],
             'svg_kb': d['svg_kb'], 'soporte': d['soporte'], 'recorte': d['recorte'],
         }

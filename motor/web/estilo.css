@@ -321,6 +321,7 @@ output{color:var(--texto);font-variant-numeric:tabular-nums}
 .muestras i{width:13px;height:13px;border-radius:4px;border:1px solid var(--borde-fuerte)}
 .nota{color:var(--alerta);margin-top:12px;font-size:12.5px}
 .ficha em{font-style:normal;color:var(--tenue);font-weight:400}
+.ficha dd.dudoso{color:var(--alerta)}
 
 /* .pantalla.cuadrada ya gana por especificidad a los .pantalla de arriba */
 @media (max-width:560px){

@@ -66,7 +66,7 @@
     <section class="tarjeta" style="--i:1" aria-labelledby="t2">
       <div class="titulo-paso"><span class="num">2</span>
         <div><h2 id="t2">Tamaño del sticker</h2>
-          <p class="ayuda">El PNG sale a 300 ppp, que es lo que pide una imprenta. El SVG no tiene tamaño: vale para cualquiera de los de abajo y para los que no están.</p></div>
+          <p class="ayuda">Es el lado mayor: el sticker cabe siempre en ese cuadrado, y si el logo es apaisado el otro lado sale en proporción. El PNG va a 300 ppp, que es lo que pide una imprenta; el SVG no tiene tamaño y vale para todos.</p></div>
       </div>
 
       <div class="tamanos" id="tamanos" role="radiogroup" aria-label="Tamaño del sticker en centímetros"></div>
@@ -120,6 +120,10 @@
       </a>
     </div>
     <dl class="ficha" id="ficha" hidden></dl>
+    <p class="aviso-error" id="aviso-modelo" role="status" hidden>
+      El fondo no era plano, así que el logo se ha separado con un modelo
+      automático. Es el camino menos exacto: mira el resultado con calma antes
+      de mandarlo a imprimir.</p>
   </aside>
 </main>
 
