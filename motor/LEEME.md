@@ -42,6 +42,14 @@ cómodo en local, inútil en un servicio.
 Todo desde el navegador: subir el avatar, subir poses, escuchar y elegir voz,
 escribir el guion, ver el video y descargarlo. Se corta con `Ctrl+C`.
 
+Son dos módulos, con el mismo acceso y el mismo aspecto. Se cambia de uno a
+otro con las pestañas de la cabecera:
+
+| Ruta | Módulo |
+|---|---|
+| `/` | Estudio de avatares: de un guion a un video vertical |
+| `/stickers` | Creador de stickers: de un logotipo a un PNG transparente y un SVG |
+
 Solo escucha en `127.0.0.1`, así que no queda expuesta a la red.
 
 Cada video generado desde la web se guarda en `../salida/web_<id>.mp4`. Se
@@ -120,6 +128,7 @@ reaprovecha. Si borras `cache/`, se regenera sola.
 | `entorno.py` | Resuelve FFmpeg y la tipografía según el sistema |
 | `web/` | La interfaz: `index.html`, `estilo.css`, `app.js` (sin dependencias) |
 | `estilo.py` | Fondos, planos de cámara, tipografía |
+| `sticker.py` | Recorta el fondo de un logo, lo revectoriza y lo deja listo para imprimir |
 | `medir.py` | Mide ojos, boca, cejas y barbilla de cualquier imagen |
 | `poses.py` | Recorta y cataloga las poses de recurso |
 | `avatar.py` | El rig: mandíbula, ancho de boca, cierre de labios, párpados, cejas, ladeo |
@@ -130,6 +139,87 @@ reaprovecha. Si borras `cache/`, se regenera sola.
 | `poses/` | Poses de recurso ya recortadas |
 | `guiones/` | Tus guiones `.txt` |
 | `cache/` | Voz reutilizable, indexada por texto y voz |
+
+## Stickers: recortar un logo y dejarlo imprimible
+
+`sticker.py` resuelve un encargo distinto al del vídeo: coger el logotipo tal y
+como llega —un JPEG pequeño, con el logo pegado sobre una foto de fondo— y
+devolverlo con fondo transparente y a la calidad que pide una imprenta.
+
+```bash
+cd motor
+python sticker.py ../logo.jpeg --nombre glamshop --cm 10 --ppp 300
+```
+
+Deja todo en `salida/stickers/<nombre>/`:
+
+| Archivo | Para qué |
+|---|---|
+| `<nombre>_transparente.png` | El recorte fiel, a la resolución del original |
+| `<nombre>.svg` | El trazado vectorial: **esto es lo que se le manda a la imprenta** |
+| `<nombre>_<N>cm_<P>ppp.png` | Rasterizado del vector al tamaño de impresión |
+| `<nombre>_revision.png` | Original contra resultado, y un detalle ampliado |
+
+### Por qué no basta con recortar y ampliar
+
+Ampliar un JPEG de 1165 px a tamaño de impresión da justo lo que no se quiere:
+bordes blandos y escalones. Así que el recorte fiel se entrega, pero el
+resultado bueno sale de otro camino:
+
+1. **Detectar el soporte.** El logo está dentro de un círculo. Se ajusta ese
+   círculo por mínimos cuadrados con rechazo de puntos sueltos, y sale con una
+   precisión de 0,1 px. El alfa se calcula del círculo ideal, no de un umbral:
+   por eso el borde queda limpio y no serrado.
+2. **Despegar el halo.** Los píxeles del borde llevan color del fondo mezclado
+   dentro por el JPEG. Se sustituyen por el del píxel opaco más cercano; si no,
+   queda una orla gris alrededor del recorte.
+3. **Separar las tintas.** Se agrupan los colores y se descartan los que caen
+   sobre la recta entre dos tintas ya aceptadas: ésos no son del logo, son el
+   degradado del antialias.
+4. **Revectorizar.** Se clasifica a 4 aumentos (de ahí el borde subpíxel), se
+   suaviza el temblor del contorno *sin* redondear las esquinas, y se ajustan
+   curvas de Bézier con un error máximo de 0,14 px.
+5. **Rasterizar al tamaño pedido.** Desde el vector, con 4× de supermuestreo y
+   el color premultiplicado por el alfa, para que al reducir no aparezca orla.
+
+A partir del paso 4 el logo ya no tiene resolución: se dibuja igual de nítido a
+3 cm que a 30.
+
+### Desde el navegador
+
+`/stickers` hace lo mismo sin tocar la consola: se suelta el logotipo, se elige
+el lado (de 3x3 a 10x10 cm) y salen el PNG y el SVG para descargar, con el
+resultado sobre un damero para ver la transparencia. El PNG siempre a 300 ppp.
+
+La pestaña de troquel **solo se aplica al PNG**: el SVG sale con la silueta
+limpia, que es lo que espera la imprenta para generar su propia línea de corte.
+
+Cada trabajo deja su carpeta en `salida/stickers/web_<id>/`, y se borra sola a
+las 12 horas.
+
+### Opciones de la línea de comandos
+
+| Opción | Qué hace |
+|---|---|
+| `--cm 10` | Lado impreso, en centímetros |
+| `--ppp 300` | Puntos por pulgada. 300 es lo normal en imprenta |
+| `--borde-mm 2` | Añade la pestaña blanca de troquel alrededor |
+| `--colores 16` | Tope de tintas planas |
+| `--minimo 0.0002` | Superficie mínima para que un color cuente. Bajarlo rescata detalles diminutos (los iconos sociales); subirlo deja la vectorización más limpia |
+| `--max-lado 1800` | Lado máximo del original. Por encima se reduce: el trazado ya trabaja a varios aumentos, así que partir de más píxeles no afina el dibujo, solo multiplica el tiempo y el peso del SVG |
+| `--margen 1` | Píxeles que se recortan hacia dentro del borde |
+| `--sin-vector` | Sólo recortar el fondo, sin revectorizar |
+
+### Dónde está el límite
+
+Los tres iconos sociales ocupan unos 45 px en el original y el de Instagram es
+un degradado. Vectorizar un degradado de 45 px da bandas, no un degradado. A
+tamaño de sticker (unos 5 mm) no se nota, pero si se quieren perfectos hay que
+sustituirlos por los SVG oficiales de cada marca, no trazarlos.
+
+El detector de soporte reconoce un círculo; si no lo encuentra, cae a recortar
+la mancha de color del centro. Para un logo sobre fondo complicado que no sea
+circular, conviene revisar `<nombre>_revision.png` antes de mandar nada.
 
 ## Poses de recurso
 

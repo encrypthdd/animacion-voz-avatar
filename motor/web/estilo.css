@@ -266,3 +266,68 @@ output{color:var(--texto);font-variant-numeric:tabular-nums}
     transition-duration:.01ms!important}
   .aurora i{animation:none}
 }
+
+/* ========================================================== stickers ===== */
+.nav{display:flex;gap:4px;background:rgba(0,0,0,.34);border:1px solid var(--borde);
+  border-radius:999px;padding:4px;margin-left:auto}
+.nav a{min-height:36px;display:inline-flex;align-items:center;padding:0 16px;
+  border-radius:999px;color:var(--suave);text-decoration:none;
+  font:600 13.5px Inter,system-ui,sans-serif;transition:var(--t)}
+.nav a:hover{color:var(--texto)}
+.nav a.activo{background:linear-gradient(135deg,var(--violeta),var(--indigo));color:#fff}
+.cabecera .enlace-salida{margin-left:0}
+
+/* ---------------------------------------------------------- logo elegido */
+.elegido-logo{display:flex;align-items:center;gap:14px;margin-top:16px;padding:12px;
+  border:1px solid var(--borde);border-radius:var(--r-m);background:rgba(0,0,0,.26);
+  position:relative;animation:entrar .4s cubic-bezier(.22,1,.36,1) backwards}
+.elegido-logo img{width:72px;height:72px;border-radius:var(--r-s);object-fit:contain;
+  background:#14111f;flex:none}
+.elegido-logo .datos{min-width:0;flex:1}
+.elegido-logo .nom{font-size:14px;font-weight:600;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.elegido-logo .mini{font-size:12px;color:var(--tenue);margin-top:3px;
+  font-variant-numeric:tabular-nums}
+.elegido-logo .quitar{position:static;flex:none}
+
+/* ---------------------------------------------------------- tamaños */
+.tamanos{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.tamanos button{display:grid;gap:1px;place-items:center;min-height:62px;padding:8px 4px;
+  border:1px solid var(--borde);border-radius:var(--r-m);background:rgba(0,0,0,.26);
+  color:var(--suave);cursor:pointer;transition:var(--t);
+  font:400 12px Inter,system-ui,sans-serif}
+.tamanos button strong{font-size:15.5px;font-weight:700;color:var(--texto);
+  font-variant-numeric:tabular-nums}
+.tamanos button:hover{border-color:var(--borde-fuerte);background:rgba(255,255,255,.055);
+  transform:translateY(-2px)}
+.tamanos button[aria-checked="true"]{border-color:var(--violeta-claro);
+  background:linear-gradient(135deg,rgba(124,58,237,.3),rgba(236,72,153,.16));
+  box-shadow:0 0 0 1px var(--violeta-claro),0 12px 30px -16px var(--violeta)}
+.tamanos button[aria-checked="true"] strong{color:#fff}
+
+/* ---------------------------------------------------------- previo */
+.formatos{display:flex;width:100%;margin-bottom:12px}
+.formatos button{flex:1}
+.formatos button[aria-disabled="true"]{opacity:.45;pointer-events:none}
+.pantalla.cuadrada{aspect-ratio:1/1}
+/* damero: sin él, un logo claro sobre fondo oscuro parece tener fondo blanco */
+.tablero{background-color:#15121f;background-image:
+  linear-gradient(45deg,rgba(255,255,255,.075) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.075) 75%),
+  linear-gradient(45deg,rgba(255,255,255,.075) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.075) 75%);
+  background-size:24px 24px;background-position:0 0,12px 12px}
+.pantalla img#resultado{width:100%;height:100%;object-fit:contain;display:block;padding:14px}
+.acciones.dos-descargas{grid-template-columns:1fr 1fr}
+.muestras{display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:212px}
+.muestras i{width:13px;height:13px;border-radius:4px;border:1px solid var(--borde-fuerte)}
+.nota{color:var(--alerta);margin-top:12px;font-size:12.5px}
+.ficha em{font-style:normal;color:var(--tenue);font-weight:400}
+
+/* .pantalla.cuadrada ya gana por especificidad a los .pantalla de arriba */
+@media (max-width:560px){
+  /* mismo problema que con el video: el cuadrado vacio empujaba el
+     formulario fuera de la pantalla antes de que hubiera nada que ver */
+  .pantalla.cuadrada:has(img[hidden]){aspect-ratio:16/9}
+  .nav{margin-left:0;align-self:stretch}
+  .nav a{flex:1;justify-content:center}
+  .tamanos{grid-template-columns:repeat(2,1fr)}
+}

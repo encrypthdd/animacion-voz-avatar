@@ -1,22 +1,5 @@
 'use strict';
-
-const $ = (s) => document.querySelector(s);
-const ico = {
-  check: '<svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>',
-  equis: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-  play:  '<svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8V4Z"/></svg>',
-  carga: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
-};
-
-async function pedir(url, opciones) {
-  const r = await fetch(url, opciones);
-  if (r.status === 401) { location.href = '/entrar'; throw new Error('sesión caducada'); }
-  if (r.status === 429) {
-    const d = await r.json().catch(() => ({}));
-    throw new Error(d.error || 'Demasiadas peticiones seguidas. Espera un poco.');
-  }
-  return r;
-}
+/* $, ico, pedir y error viven en comun.js, que se carga antes que este. */
 
 const estado = {
   voces: [], genero: '', pais: '', voz: null,
@@ -242,13 +225,6 @@ function pintarFondos(fondos) {
 }
 
 // ───────────────────────────────────────────────────────────── generar
-function error(msg) {
-  const n = $('#error-global');
-  n.hidden = !msg;
-  n.textContent = msg || '';
-  if (msg) n.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
 async function generar() {
   const guion = $('#guion').value.trim();
   if (guion.length < 10) return error('Escribe un guion de al menos 10 caracteres.');

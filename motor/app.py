@@ -10,12 +10,15 @@ import asyncio, io, json, os, re, threading, time, traceback, unicodedata, uuid
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
-import avatar, crear, estilo, medir, poses, render, seguridad
+import avatar, crear, estilo, medir, poses, render, seguridad, sticker
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, 'web')
 SALIDA = os.path.join(AQUI, '..', 'salida')
 MUESTRAS = os.path.join(AQUI, 'cache', 'muestras')
+STICKERS = os.path.join(SALIDA, 'stickers')
+LOGOS = os.path.join(AQUI, 'cache', 'logos')
+TAMANOS = [3, 4, 5, 6, 7, 8, 9, 10]      # lado del sticker, en centimetros
 
 app = Flask(__name__, static_folder=None)
 CLAVE, CLAVE_GENERADA = seguridad.configurar(app, SALIDA)
@@ -26,12 +29,12 @@ _voces = None
 
 
 # ----------------------------------------------------------------- utilidades
-def limpio(nombre):
+def limpio(nombre, defecto='avatar'):
     """Nombre de archivo seguro y sin acentos."""
     base = os.path.splitext(os.path.basename(nombre))[0]
     base = unicodedata.normalize('NFKD', base).encode('ascii', 'ignore').decode()
     base = re.sub(r'[^A-Za-z0-9_-]+', '_', base).strip('_').lower()
-    return base or 'avatar'
+    return base[:40] or defecto
 
 
 def voces():
@@ -73,6 +76,11 @@ def estado_avatares():
 @app.route('/')
 def index():
     return send_from_directory(WEB, 'index.html')
+
+
+@app.route('/stickers')
+def pagina_stickers():
+    return send_from_directory(WEB, 'stickers.html')
 
 
 @app.route('/web/<path:ruta>')
@@ -310,6 +318,120 @@ def api_descargar(tid):
         abort(404)
     return send_file(t['archivo'], mimetype='video/mp4', as_attachment=True,
                      download_name='avatar.mp4')
+
+
+# ----------------------------------------------------------------- stickers
+def _trabajar_sticker(tid, origen, nombre, cm, borde_mm):
+    def paso(pct, msg):
+        with _lock:
+            TRABAJOS[tid].update(estado='trabajando', pct=pct, mensaje=msg)
+    try:
+        r = sticker.procesar(origen, nombre=nombre, cm=cm, borde_mm=borde_mm,
+                             destino=os.path.join(STICKERS, 'web_' + tid),
+                             con_revision=False, cb=paso)
+        with _lock:
+            TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo',
+                                 carpeta=r['carpeta'], datos=r,
+                                 archivos={r['png'], r['svg'], r['fiel']})
+    except Exception as e:
+        traceback.print_exc()
+        with _lock:
+            TRABAJOS[tid].update(estado='error', pct=0, mensaje=str(e))
+    finally:
+        seguridad.soltar_turno()
+        try:
+            os.remove(origen)          # el logo subido ya no hace falta
+        except OSError:
+            pass
+
+
+@app.post('/api/sticker')
+def api_sticker():
+    f = request.files.get('archivo')
+    if not f or not f.filename:
+        return jsonify({'error': 'No llegó ningún archivo.'}), 400
+    try:
+        cm = int(request.form.get('cm', 10))
+    except (TypeError, ValueError):
+        cm = 0
+    if cm not in TAMANOS:
+        return jsonify({'error': 'Tamaño no válido. Elige uno de la lista.'}), 400
+    borde_mm = 2.0 if request.form.get('borde') == '1' else 0.0
+
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+        return jsonify({'error': 'Formato no admitido. Usa PNG, JPG o WEBP.'}), 400
+    nombre = limpio(f.filename, 'logo')
+    tid = uuid.uuid4().hex
+    os.makedirs(LOGOS, exist_ok=True)
+    seguridad.purgar_sueltos(LOGOS, horas=1)
+    origen = os.path.join(LOGOS, 'web_' + tid + ext)
+    f.save(origen)
+    # Un logotipo no necesita ser alto como un avatar, pero por debajo de
+    # 300 px no hay forma de sacar un trazado decente para imprimir.
+    mal = seguridad.revisar_imagen(origen, minimo=(300, 300),
+                                   uso='para vectorizarla con calidad de imprenta')
+    if mal:
+        os.remove(origen)
+        return jsonify({'error': mal}), 400
+
+    if not seguridad.tomar_turno():
+        os.remove(origen)
+        return jsonify({'error': 'El servidor está ocupado con otros trabajos. '
+                        'Prueba en un par de minutos.'}), 429
+
+    os.makedirs(STICKERS, exist_ok=True)
+    seguridad.purgar_carpetas(STICKERS)
+    with _lock:
+        TRABAJOS[tid] = {'estado': 'cola', 'pct': 0, 'mensaje': 'En cola…',
+                         'tipo': 'sticker', 'archivos': set()}
+    try:
+        threading.Thread(target=_trabajar_sticker,
+                         args=(tid, origen, nombre, cm, borde_mm),
+                         daemon=True).start()
+    except Exception:
+        seguridad.soltar_turno()
+        raise
+    return jsonify({'id': tid})
+
+
+@app.get('/api/trabajo-sticker/<tid>')
+def api_trabajo_sticker(tid):
+    with _lock:
+        t = TRABAJOS.get(tid)
+    if not t or t.get('tipo') != 'sticker':
+        abort(404)
+    r = {'estado': t['estado'], 'pct': t['pct'], 'mensaje': t['mensaje']}
+    if t['estado'] == 'listo':
+        d = t['datos']
+        r['resultado'] = {
+            'png': f'/media-sticker/{tid}/{d["png"]}',
+            'svg': f'/media-sticker/{tid}/{d["svg"]}',
+            'fiel': f'/media-sticker/{tid}/{d["fiel"]}',
+            'nombre_png': d['png'], 'nombre_svg': d['svg'],
+            'px': d['px'], 'cm': d['cm_real'], 'ppp': d['ppp'],
+            'cm_pedido': d['cm'], 'borde_mm': d['borde_mm'],
+            'curvas': d['curvas'], 'capas': d['capas'], 'paleta': d['paleta'],
+            'svg_kb': d['svg_kb'], 'soporte': d['soporte'], 'recorte': d['recorte'],
+        }
+    return jsonify(r)
+
+
+@app.get('/media-sticker/<tid>/<nombre>')
+def api_sticker_archivo(tid, nombre):
+    """Sirve un resultado. El nombre se compara con los que produjo el trabajo,
+    así que no hay forma de pedir un archivo de fuera de su carpeta."""
+    with _lock:
+        t = TRABAJOS.get(tid)
+    if not t or t.get('tipo') != 'sticker' or nombre not in t.get('archivos', ()):
+        abort(404)
+    ruta = os.path.join(t['carpeta'], nombre)
+    if not os.path.isfile(ruta):
+        abort(404)
+    tipo = 'image/svg+xml' if nombre.endswith('.svg') else 'image/png'
+    return send_file(ruta, mimetype=tipo,
+                     as_attachment=request.args.get('descargar') == '1',
+                     download_name=nombre, conditional=True)
 
 
 if __name__ == '__main__':

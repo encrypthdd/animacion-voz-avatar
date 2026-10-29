@@ -50,6 +50,22 @@ deforman con warps. Eso corre en CPU, es determinista y no deja marca de agua.
 El resultado sale en **1080×1920 a 30 fps**, listo para TikTok, Reels o Shorts.
 El render tarda alrededor de **un minuto por cada 10 segundos** de video.
 
+### Creador de stickers
+
+El segundo módulo, en `/stickers`, resuelve otro encargo: convertir un logotipo
+en material de imprenta. No amplia el original — eso siempre sale borroso — sino
+que **lo revectoriza**: detecta el soporte con precisión de subpíxel, separa las
+tintas planas del degradado que inventó el JPEG y reescribe el dibujo como curvas
+de Bézier. A partir de ahí el logo ya no tiene resolución.
+
+| Capacidad | Cómo |
+|---|---|
+| **Fondo fuera** | Se ajusta el círculo del logo por mínimos cuadrados: borde limpio, sin dientes de sierra |
+| **Sin orla gris** | Los píxeles del borde llevan fondo mezclado dentro; se reemplazan por el color de dentro |
+| **Sin pixelar** | Curvas de Bézier con 0,14 px de error máximo, no píxeles ampliados |
+| **Tamaño a elegir** | De 3×3 a 10×10 cm, PNG a 300 ppp, y un SVG que vale para cualquier tamaño |
+| **Troquel** | Pestaña blanca de 2 mm alrededor, opcional |
+
 ---
 
 ## Pantallas
@@ -212,6 +228,9 @@ motor/
 | `GET` | `/api/trabajo/<id>` | Estado y porcentaje real de ese render |
 | `GET` | `/video/<id>.mp4` | El video, para el reproductor |
 | `GET` | `/descargar/<id>` | El mismo video, como descarga |
+| `POST` | `/api/sticker` | Sube un logotipo y lo vectoriza al tamaño pedido |
+| `GET` | `/api/trabajo-sticker/<id>` | Estado del vectorizado y datos del resultado |
+| `GET` | `/media-sticker/<id>/<archivo>` | El PNG o el SVG; con `?descargar=1`, como descarga |
 
 ---
 

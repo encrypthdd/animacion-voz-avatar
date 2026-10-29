@@ -34,14 +34,18 @@ HORAS_VIDEO = 12           # los videos se borran pasado este tiempo
 # peticiones permitidas por ventana, por IP
 LIMITES = {
     'generar': (6, 900),       # 6 cada 15 min: es lo caro
+    'sticker': (15, 900),      # vectorizar cuesta ~25 s, menos que un video
     'subir':   (20, 900),
     'muestra': (60, 900),
     'entrar':  (8, 900),       # contra fuerza bruta
     'general': (300, 60),
 }
+# Ojo con los prefijos: el sondeo del progreso y las descargas van por rutas
+# distintas (/api/trabajo-sticker, /media-sticker) justamente para que no
+# consuman el cupo de 'sticker', que es el de crear uno nuevo.
 RUTAS = {
     '/api/generar': 'generar', '/api/avatar': 'subir', '/api/pose': 'subir',
-    '/api/muestra': 'muestra', '/entrar': 'entrar',
+    '/api/sticker': 'sticker', '/api/muestra': 'muestra', '/entrar': 'entrar',
 }
 
 _cubos = {}
@@ -89,12 +93,15 @@ def _permitido(ip, grupo):
 
 
 # ─── Imágenes ───────────────────────────────────────────────────────────────
-def revisar_imagen(ruta):
+def revisar_imagen(ruta, minimo=(120, 240), uso='para medir la cara'):
     """Devuelve None si la imagen es sana, o el motivo del rechazo.
 
     No basta con mirar la extensión: cualquiera renombra un archivo. Se abre de
     verdad y se comprueba el formato y el tamaño, porque una imagen enorme tumba
     el proceso al descomprimirla aunque pese poco en disco.
+
+    El mínimo cambia según para qué se suba: un avatar necesita alto (es una
+    persona de cuerpo entero), un logotipo no.
     """
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = MAX_PIXELES
@@ -115,8 +122,8 @@ def revisar_imagen(ruta):
         return f'La imagen es demasiado grande ({an}×{al}).'
     if an > MAX_LADO or al > MAX_LADO:
         return f'Ningún lado puede pasar de {MAX_LADO} px (esta es {an}×{al}).'
-    if an < 120 or al < 240:
-        return f'La imagen es muy pequeña ({an}×{al}) para medir la cara.'
+    if an < minimo[0] or al < minimo[1]:
+        return f'La imagen es muy pequeña ({an}×{al}) {uso}.'
     return None
 
 
@@ -138,6 +145,45 @@ def huecos_libres():
 
 
 # ─── Limpieza de disco ──────────────────────────────────────────────────────
+def purgar_carpetas(raiz, horas=HORAS_VIDEO, prefijo='web_'):
+    """Borra las carpetas de resultados que la web dejó y ya nadie va a bajar.
+
+    Cada sticker deja una carpeta con varios archivos, así que aquí se borra el
+    árbol entero y no archivo a archivo.
+    """
+    import shutil
+    if not os.path.isdir(raiz):
+        return 0
+    limite = time.time() - horas * 3600
+    n = 0
+    for d in os.listdir(raiz):
+        if not d.startswith(prefijo):
+            continue
+        p = os.path.join(raiz, d)
+        try:
+            if os.path.isdir(p) and os.path.getmtime(p) < limite:
+                shutil.rmtree(p, ignore_errors=True); n += 1
+        except OSError:
+            pass
+    return n
+
+
+def purgar_sueltos(carpeta, horas=HORAS_VIDEO, prefijo='web_'):
+    """Lo mismo, pero para los archivos sueltos (los logos recién subidos)."""
+    if not os.path.isdir(carpeta):
+        return 0
+    limite = time.time() - horas * 3600
+    n = 0
+    for f in os.listdir(carpeta):
+        p = os.path.join(carpeta, f)
+        try:
+            if f.startswith(prefijo) and os.path.isfile(p) and os.path.getmtime(p) < limite:
+                os.remove(p); n += 1
+        except OSError:
+            pass
+    return n
+
+
 def purgar_videos(carpeta, horas=HORAS_VIDEO):
     """Borra los videos generados por la web que ya nadie va a descargar."""
     if not os.path.isdir(carpeta):
@@ -222,7 +268,9 @@ def configurar(app, salida):
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data:; media-src 'self'; "
+            # blob: lo necesita el creador de stickers para enseñar el logo
+            # recién elegido sin tener que subirlo antes al servidor.
+            "img-src 'self' data: blob:; media-src 'self'; "
             "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
             "form-action 'self'")
         return r
