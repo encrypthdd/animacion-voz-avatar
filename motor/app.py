@@ -332,7 +332,8 @@ def _trabajar_sticker(tid, origen, nombre, cm, borde_mm):
         with _lock:
             TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo',
                                  carpeta=r['carpeta'], datos=r,
-                                 archivos={r['png'], r['svg'], r['fiel']})
+                                 archivos={n for n in (r.get('png'), r.get('svg'),
+                                                       r.get('fiel')) if n})
         try:
             os.remove(origen)          # salio bien: el logo subido ya no hace falta
         except OSError:
@@ -409,9 +410,11 @@ def api_trabajo_sticker(tid):
         d = t['datos']
         r['resultado'] = {
             'png': f'/media-sticker/{tid}/{d["png"]}',
-            'svg': f'/media-sticker/{tid}/{d["svg"]}',
+            'svg': f'/media-sticker/{tid}/{d["svg"]}' if d.get('svg') else None,
             'fiel': f'/media-sticker/{tid}/{d["fiel"]}',
-            'nombre_png': d['png'], 'nombre_svg': d['svg'],
+            'nombre_png': d['png'], 'nombre_svg': d.get('svg'),
+            'tipo': d['tipo'], 'planitud': d['planitud'],
+            'ppp_real': d['ppp_real'],
             'px': d['px'], 'cm': d['cm_real'], 'ppp': d['ppp'],
             'cm_pedido': d['cm'], 'borde_mm': d['borde_mm'],
             'metodo': sticker.METODOS.get(d['metodo'], d['metodo']),

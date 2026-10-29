@@ -322,6 +322,12 @@ output{color:var(--texto);font-variant-numeric:tabular-nums}
 .nota{color:var(--alerta);margin-top:12px;font-size:12.5px}
 .ficha em{font-style:normal;color:var(--tenue);font-weight:400}
 .ficha dd.dudoso{color:var(--alerta)}
+.nota-tipo{background:rgba(99,102,241,.14);border:1px solid rgba(124,58,237,.42);
+  color:var(--texto);border-radius:var(--r-m);padding:12px 15px;font-size:13px;line-height:1.5}
+.nota-tipo.flojo{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.45)}
+.nota-tipo strong{color:var(--violeta-claro)}
+.nota-tipo.flojo strong{color:var(--alerta)}
+.acciones:not(.dos-descargas){grid-template-columns:1fr}
 
 /* .pantalla.cuadrada ya gana por especificidad a los .pantalla de arriba */
 @media (max-width:560px){

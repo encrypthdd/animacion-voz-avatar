@@ -133,29 +133,59 @@ function mostrar(r) {
   avance(100, 'Listo');
   setTimeout(() => { $('#progreso').hidden = true; }, 500);
 
+  // Una ilustracion no se vectoriza, asi que no hay SVG que ensenar ni bajar.
+  if (!r.svg) st.formato = 'png';
   verFormato(st.formato);
   $('#resultado').hidden = false;
   $('#bajar-png').href = r.png + '?descargar=1';
   $('#bajar-png').setAttribute('download', r.nombre_png);
-  $('#bajar-svg').href = r.svg + '?descargar=1';
-  $('#bajar-svg').setAttribute('download', r.nombre_svg);
+  $('#bajar-svg').hidden = !r.svg;
+  if (r.svg) {
+    $('#bajar-svg').href = r.svg + '?descargar=1';
+    $('#bajar-svg').setAttribute('download', r.nombre_svg);
+  }
+  $('#acciones').classList.toggle('dos-descargas', !!r.svg);
   $('#acciones').hidden = false;
   $('#generar').removeAttribute('aria-disabled');
-  document.querySelectorAll('.formatos button')
-    .forEach((b) => b.removeAttribute('aria-disabled'));
+  document.querySelectorAll('.formatos button').forEach((b) => {
+    const hay = b.dataset.formato === 'png' || !!r.svg;
+    b.toggleAttribute('aria-disabled', !hay);
+  });
 
   const troquel = r.borde_mm
     ? ` <em>(${r.cm_pedido} + ${r.borde_mm} mm de troquel)</em>` : '';
+  const dibujo = r.tipo === 'plano'
+    ? `colores planos <em>(${Math.round(r.planitud * 100)} %)</em>`
+    : `ilustración <em>(sólo ${Math.round(r.planitud * 100)} % de color plano)</em>`;
   const muestras = r.paleta
     .map((c) => `<i style="background:${c}" title="${c}"></i>`).join('');
   $('#ficha').innerHTML = `
     <div><dt>PNG</dt><dd>${r.px[0]} × ${r.px[1]} px · ${r.ppp} ppp</dd></div>
     <div><dt>Impreso</dt><dd>${r.cm[0]} × ${r.cm[1]} cm${troquel}</dd></div>
-    <div><dt>SVG</dt><dd>${r.curvas} curvas · ${r.svg_kb} KB</dd></div>
+    <div><dt>Dibujo</dt><dd>${dibujo}</dd></div>
+    ${r.svg ? `<div><dt>SVG</dt><dd>${r.curvas} curvas · ${r.svg_kb} KB</dd></div>` : ''}
     <div><dt>Tintas</dt><dd><span class="muestras">${muestras}</span></dd></div>
     <div><dt>Recorte</dt><dd${r.fiable ? '' : ' class="dudoso"'}>${r.metodo}</dd></div>`;
   $('#ficha').hidden = false;
   $('#aviso-modelo').hidden = r.fiable;
+
+  // Por que no hay SVG, y si el tamano elegido cabe en los pixeles que hay.
+  const n = $('#aviso-tipo');
+  if (r.tipo === 'plano') {
+    n.hidden = true;
+  } else {
+    n.hidden = false;
+    n.innerHTML = `Este logotipo es una <strong>ilustración</strong> con degradados
+      o grano, no colores planos: redibujarlo con curvas lo estropearía. Se
+      entrega el recorte a máxima fidelidad, sin SVG.` + (r.ppp_real >= r.ppp
+      ? ` A ${r.cm_pedido} cm el original da <strong>${r.ppp_real} ppp</strong>,
+         por encima de los ${r.ppp} que pide la imprenta: no se ha inventado
+         ningún píxel.`
+      : ` Ojo: a ${r.cm_pedido} cm el original sólo da <strong>${r.ppp_real} ppp</strong>,
+         por debajo de los ${r.ppp} de imprenta. Baja el tamaño o parte de un
+         original más grande.`);
+    n.classList.toggle('flojo', r.ppp_real < r.ppp);
+  }
   $('#previo').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 

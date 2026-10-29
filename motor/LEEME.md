@@ -160,7 +160,35 @@ Deja todo en `salida/stickers/<nombre>/`:
 | `<nombre>_<N>cm_<P>ppp.png` | Rasterizado del vector al tamaño de impresión |
 | `<nombre>_revision.png` | Original contra resultado, y un detalle ampliado |
 
-### Por qué no basta con recortar y ampliar
+### Vectorizar no siempre es mejor
+
+Lo primero que decide el motor es **qué clase de logo le han dado**, porque de
+eso depende todo lo demás. Se mide qué fracción de la imagen explican de verdad
+unas pocas tintas planas (distancia en LAB menor que 6 al color más cercano de
+la paleta):
+
+| Logotipo | Explicado por tintas planas | Camino |
+|---|---|---|
+| Letras, siluetas, colores lisos | 90-100 % | **se revectoriza**: deja de tener resolución |
+| Ilustración con degradados, grano o sombras | 40-70 % | **no se toca el dibujo**: se recorta y se entrega fiel |
+
+El umbral está en el 80 % (`UMBRAL_PLANO`). La diferencia medida sobre dos
+logos reales: uno de colores planos da 96 %, y una ilustración con planeta,
+degradados y grano da 41 %.
+
+Vectorizar la ilustración es justo lo que no hay que hacer: convierte el
+degradado en parches de color y el grano en manchas. Y además no hace falta,
+porque a los tamaños de un sticker el original ya tiene píxeles de sobra —ese
+logo de 1280 px da 632 ppp a 5 cm, muy por encima de los 300 de imprenta—. Así
+que el camino bueno es recortar el fondo bien y no inventar nada: los píxeles
+opacos del resultado son **idénticos** a los del original, y recompuesto sobre
+su fondo el error medio es de 0,19 niveles.
+
+Cuando se va por ese camino no hay SVG, y la interfaz lo explica en vez de
+entregar un vector peor que el PNG. Con `--vector-siempre` se fuerza de todas
+formas.
+
+### Por qué no basta con recortar y ampliar (en un logo plano)
 
 Ampliar un JPEG de 1165 px a tamaño de impresión da justo lo que no se quiere:
 bordes blandos y escalones. Así que el recorte fiel se entrega, pero el

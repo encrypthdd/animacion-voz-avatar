@@ -60,9 +60,11 @@ de Bézier. A partir de ahí el logo ya no tiene resolución.
 
 | Capacidad | Cómo |
 |---|---|
+| **Sabe qué le han dado** | Mide cuánto explican unas tintas planas. Un logo liso se revectoriza; una ilustración con degradados o grano no se toca, porque vectorizarla la estropea |
 | **Fondo fuera** | Se ajusta el círculo del logo por mínimos cuadrados: borde limpio, sin dientes de sierra |
 | **Sin orla gris** | Los píxeles del borde llevan fondo mezclado dentro; se reemplazan por el color de dentro |
 | **Sin pixelar** | Curvas de Bézier con 0,14 px de error máximo, no píxeles ampliados |
+| **Sin inventar** | Si no se vectoriza, los píxeles opacos salen idénticos al original, y se dice a cuántos ppp reales queda el tamaño elegido |
 | **Tamaño a elegir** | De 3×3 a 10×10 cm, PNG a 300 ppp, y un SVG que vale para cualquier tamaño |
 | **Troquel** | Pestaña blanca de 2 mm alrededor, opcional |
 

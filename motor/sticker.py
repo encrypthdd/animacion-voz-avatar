@@ -36,6 +36,7 @@ SALIDA = os.path.join(AQUI, '..', 'salida', 'stickers')
 ESCALA = 4           # aumentos maximos a los que se clasifica y se traza
 OBJETIVO = 4000      # lado de trabajo: acota la memoria con logos grandes
 MAX_LADO = 1800      # lado maximo del original; por encima no se gana nada
+UMBRAL_PLANO = 0.80  # fraccion de pixeles que las tintas planas deben explicar
 TOL_TRAZO = 0.14     # error máximo del ajuste de Bézier, en píxeles del original
 ANGULO_ESQUINA = 58  # grados de giro a partir de los cuales hay esquina viva
 PASO_TRAZO = 0.45    # separación de los puntos del contorno, en píxeles
@@ -222,6 +223,29 @@ def _cobertura_circulo(alto, ancho, cx, cy, r):
     return np.clip(r - d + 0.5, 0, 1)
 
 
+def _color_fondo(rgb):
+    """Color del marco de la imagen, que es el del fondo cuando es plano."""
+    lab = _lab(rgb)
+    marco = np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]])
+    return np.median(marco, axis=0)
+
+
+def _alfa_suave(rgb, m, color, t0=4.0, t1=12.0):
+    """Alfa con el borde medido por color y no por el escalón de la máscara.
+
+    Una ilustración con grano o sombras suaves tiene cientos de píxeles a medio
+    camino del fondo. Recortarla con una máscara dura los parte en seco; aquí el
+    borde se mide por cuánto se aleja cada píxel del color del fondo, y solo en
+    la franja de dos píxeles donde de verdad hay transición.
+    """
+    d = np.linalg.norm(_lab(rgb) - color, axis=2)
+    alfa = np.clip((d - t0) / (t1 - t0), 0, 1).astype(np.float32)
+    k = np.ones((3, 3), np.uint8)
+    alfa[cv2.erode(m, k, iterations=2).astype(bool)] = 1.0
+    alfa[~cv2.dilate(m, k, iterations=2).astype(bool)] = 0.0
+    return alfa
+
+
 def _despegar_halo(rgb, alfa):
     """Quita el color de fondo que el JPEG mezcló en el borde del recorte.
 
@@ -310,6 +334,8 @@ def recortar(rgb, alfa_origen=None, margen=1.0):
                 duro = m
         if metodo == 'alfa':
             alfa = np.minimum(alfa_origen, duro.astype(np.float32))
+        elif metodo == 'fondo':
+            alfa = _alfa_suave(rgb, duro, _color_fondo(rgb))
         else:
             alfa = cv2.GaussianBlur(duro.astype(np.float32), (0, 0), 0.6)
         xs, ys = np.nonzero(duro.any(0))[0], np.nonzero(duro.any(1))[0]
@@ -370,6 +396,23 @@ def paleta(rgb, alfa, maximo=16, minimo=0.0002):
     lab_pal = np.array(elegidos, np.float32)
     rgb_pal = cv2.cvtColor(lab_pal.reshape(-1, 1, 3), cv2.COLOR_LAB2RGB)
     return lab_pal, np.clip(rgb_pal.reshape(-1, 3) * 255, 0, 255).round().astype(int)
+
+
+def planitud(rgb, alfa, lab_pal, umbral=6.0):
+    """Fracción de la imagen que unas pocas tintas planas explican de verdad.
+
+    Es la pregunta que decide todo lo que viene detrás. Un logotipo plano
+    —letras, siluetas, colores lisos— se revectoriza y gana: deja de tener
+    resolución. Una ilustración con degradados, grano o sombras suaves no: al
+    reducirla a tintas planas se pierde justo lo que la hace buena.
+    """
+    dentro = alfa > 0.9
+    px = rgb[dentro].reshape(-1, 3)
+    if len(px) > 60000:
+        px = px[np.random.default_rng(11).choice(len(px), 60000, replace=False)]
+    lab = _a_lab(px)
+    d = np.sqrt(((lab[:, None, :] - lab_pal[None]) ** 2).sum(2)).min(1)
+    return float((d < umbral).mean())
 
 
 def _quitar_motas(m, minimo):
@@ -708,6 +751,29 @@ def rasterizar(ancho, alto, figuras, soporte, fondo_color, lado, ss=4):
     return np.dstack([np.clip(rgb, 0, 255), alfa * 255]).round().astype(np.uint8)
 
 
+def _a_tamano(rgba, lado):
+    """Lleva un RGBA a `lado` píxeles de lado mayor.
+
+    Se premultiplica por el alfa antes de redimensionar: si no, los píxeles
+    transparentes arrastran su color al borde y aparece una orla.
+    """
+    h, w = rgba.shape[:2]
+    if w >= h:
+        nw, nh = lado, max(1, int(round(lado * h / float(w))))
+    else:
+        nh, nw = lado, max(1, int(round(lado * w / float(h))))
+    if (nw, nh) == (w, h):
+        return rgba
+    # INTER_AREA al reducir (promedia de verdad), Lanczos al ampliar.
+    inter = cv2.INTER_AREA if nw < w else cv2.INTER_LANCZOS4
+    a = rgba[..., 3].astype(np.float32) / 255.
+    pre = np.dstack([rgba[..., :3].astype(np.float32) * a[..., None], a])
+    chico = cv2.resize(pre, (nw, nh), interpolation=inter)
+    al = np.clip(chico[..., 3], 0, 1)
+    rgb = chico[..., :3] / np.maximum(al, 1e-6)[..., None]
+    return np.dstack([np.clip(rgb, 0, 255), al * 255]).round().astype(np.uint8)
+
+
 def con_borde(rgba, grosor_px, color=(255, 255, 255)):
     """Añade la pestaña blanca del troquel alrededor de la silueta."""
     if grosor_px <= 0:
@@ -754,7 +820,7 @@ def revision(ruta, original, nuevo):
 
 def procesar(ruta, nombre=None, cm=10.0, ppp=300, colores=16, margen=1.0,
              borde_mm=0.0, sin_vector=False, destino=None, minimo=0.0002,
-             con_revision=True, cb=None, max_lado=MAX_LADO):
+             con_revision=True, cb=None, max_lado=MAX_LADO, vector_siempre=False):
     """Hace todo el recorrido y devuelve los datos del resultado.
 
     `cb(pct, mensaje)` recibe el avance; la interfaz web lo usa para la barra de
@@ -793,6 +859,33 @@ def procesar(ruta, nombre=None, cm=10.0, ppp=300, colores=16, margen=1.0,
     paso(16, 'Separando las tintas…')
     lab_pal, rgb_pal = paleta(rec, alfa, colores, minimo)
     info('paleta        %s' % '  '.join(_hex(c) for c in rgb_pal))
+
+    # Vectorizar no siempre es mejor: depende de como este hecho el logo.
+    plano = planitud(rec, alfa, lab_pal)
+    r['planitud'] = round(plano, 3)
+    r['tipo'] = 'plano' if (plano >= UMBRAL_PLANO or vector_siempre) else 'ilustracion'
+    r['ppp_real'] = int(round(max(w, h) / (cm / 2.54)))
+    if r['tipo'] == 'ilustracion':
+        info('tipo          ilustracion: las tintas planas solo explican el %.0f%%, '
+             'asi que se entrega el recorte fiel sin revectorizar' % (100 * plano))
+        paso(70, 'Ajustando al tamaño de impresión…')
+        objetivo = int(round(cm / 2.54 * ppp))
+        rgba = _a_tamano(fiel, objetivo)
+        if borde_mm > 0:
+            rgba = con_borde(rgba, borde_mm / 25.4 * ppp)
+        p_imp = os.path.join(dst, '%s_%gcm_%dppp.png' % (nombre, cm, ppp))
+        tam = guardar_png(p_imp, rgba, ppp)
+        r.update(png=os.path.basename(p_imp), px=list(tam), cm=cm, ppp=ppp,
+                 borde_mm=borde_mm, paleta=[_hex(c) for c in rgb_pal],
+                 capas=0, curvas=0, svg=None, svg_kb=0,
+                 cm_real=[round(tam[0] / ppp * 2.54, 1), round(tam[1] / ppp * 2.54, 1)])
+        info('impresion     %s  %dx%d px  = %.1f x %.1f cm a %d ppp  (origen: %d ppp)'
+             % (os.path.basename(p_imp), tam[0], tam[1], tam[0] / ppp * 2.54,
+                tam[1] / ppp * 2.54, ppp, r['ppp_real']))
+        paso(100, 'Listo')
+        return r
+    info('tipo          plano: las tintas explican el %.0f%%, se revectoriza'
+         % (100 * plano))
 
     escala = escala_trabajo(w, h)
     paso(24, 'Clasificando los colores a %d aumentos…' % escala)
@@ -835,9 +928,9 @@ def procesar(ruta, nombre=None, cm=10.0, ppp=300, colores=16, margen=1.0,
             tam[0] / ppp * 2.54, tam[1] / ppp * 2.54, ppp))
 
     r.update(paleta=[_hex(c) for c in rgb_pal], capas=len(figuras), curvas=curvas,
+             borde_mm=borde_mm,
              svg=os.path.basename(p_svg), svg_kb=round(os.path.getsize(p_svg) / 1024),
              png=os.path.basename(p_imp), px=list(tam), cm=cm, ppp=ppp,
-             borde_mm=borde_mm,
              cm_real=[round(tam[0] / ppp * 2.54, 1), round(tam[1] / ppp * 2.54, 1)])
 
     if con_revision:
@@ -868,11 +961,13 @@ def main(argv=None):
                     help='pestana blanca de troquel, en mm (0)')
     ap.add_argument('--sin-vector', action='store_true',
                     help='solo recortar el fondo, sin revectorizar')
+    ap.add_argument('--vector-siempre', action='store_true',
+                    help='revectorizar aunque el logo sea una ilustracion')
     ap.add_argument('--destino', help='carpeta de salida')
     a = ap.parse_args(argv)
     r = procesar(a.imagen, a.nombre, a.cm, a.ppp, a.colores, a.margen,
                  a.borde_mm, a.sin_vector, a.destino, a.minimo,
-                 max_lado=a.max_lado)
+                 max_lado=a.max_lado, vector_siempre=a.vector_siempre)
     print('\nlisto -> %s' % os.path.abspath(r['carpeta']))
 
 
