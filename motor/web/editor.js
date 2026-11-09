@@ -285,6 +285,12 @@ function anadirClip(medioId, pistaId, t) {
     error('Una imagen no cabe en una pista de audio.');
     return null;
   }
+  if (pista.tipo !== 'audio' && m.tipo === 'audio') {
+    // dejarlo pasar no da error, pero se ve un hueco negro donde deberia
+    // haber imagen, y cuesta entender por que
+    error('Ese archivo es solo sonido: suéltalo en una pista de audio.');
+    return null;
+  }
   const c = {
     id: nuevoId(), pista: pistaId, medio: medioId,
     t: Math.max(t, 0), dur: m.tipo === 'imagen' ? 4 : Math.min(m.dur, 600),
@@ -316,15 +322,34 @@ function choca(c, t, dur) {
 function acomodar(c, t) {
   /* Dos clips de la misma pista no pueden sonar a la vez: la pista es una
      sola, y si se pisan hay que inventarse cual gana. En vez de eso, el clip
-     se desplaza al hueco libre mas cercano. */
-  let p = Math.max(t, 0);
-  for (let k = 0; k < 40; k++) {
-    const o = choca(c, p, c.dur);
-    if (!o) return p;
-    const izq = o.t - c.dur, der = o.t + o.dur;
-    p = (izq >= 0 && Math.abs(p - izq) <= Math.abs(p - der)) ? izq : der;
+     se va al hueco libre mas cercano.
+     
+     Antes esto se hacia a saltos: si chocaba, se probaba el lado mas cercano
+     del clip que estorbaba. Con dos o tres clips iba bien, pero con muchos
+     entraba en bucle -saltaba a la izquierda, chocaba, volvia a la derecha,
+     chocaba- y despues de cuarenta intentos devolvia una posicion que si se
+     pisaba. En una prueba de once clips salian seis solapados.
+     
+     Ahora se calculan los huecos de la pista y se elige el que mas cerca
+     queda de donde se solto. Siempre termina y siempre cabe. */
+  const tol = c.fundido_ent || 0;   // una transicion puede morder al anterior
+  const otros = E.montaje.clips
+    .filter((o) => o.id !== c.id && o.pista === c.pista)
+    .sort((a, b) => a.t - b.t);
+  const quiero = Math.max(t, 0);
+  const huecos = [];
+  let cursor = 0;
+  for (const o of otros) {
+    if (o.t - cursor >= c.dur - 1e-4) huecos.push([cursor, o.t - c.dur]);
+    cursor = Math.max(cursor, o.t + o.dur - tol);
   }
-  return p;
+  huecos.push([cursor, Infinity]);   // detras de todo siempre hay sitio
+  let mejor = cursor, dist = Infinity;
+  for (const [a, b] of huecos) {
+    const p = Math.min(Math.max(quiero, a), b);
+    if (Math.abs(p - quiero) < dist) { dist = Math.abs(p - quiero); mejor = p; }
+  }
+  return Math.max(mejor, 0);
 }
 
 function vecinoDerecha(c) {
@@ -696,9 +721,26 @@ function alfaRotulo(c, t) {
   return c.opacidad * Math.max(k, 0);
 }
 
+function pistaLibreEn(t, dur) {
+  /* Una pista de video donde quepa algo en [t, t+dur] sin apartar nada.
+     Importa cuando ya hay subtitulos: un rotulo nuevo en la misma pista los
+     empujaria, o se dibujaria encima. */
+  for (const p of E.montaje.pistas) {
+    if (p.tipo !== 'video') continue;
+    const libre = !E.montaje.clips.some((c) => c.pista === p.id &&
+      t < c.t + c.dur - 1e-4 && t + dur > c.t + 1e-4);
+    if (libre) return p.id;
+  }
+  const id = 'v' + nuevoId().slice(0, 4);
+  E.montaje.pistas.unshift({ id, tipo: 'video', nombre: 'Rótulos',
+                             muda: false, oculta: false });
+  pintarPistas();
+  return id;
+}
+
 function anadirTexto() {
-  const pista = E.montaje.pistas.find((p) => p.tipo === 'video');
-  if (!pista) return;
+  const pista = { id: pistaLibreEn(Math.max(E.t, 0), 3) };
+  if (!pista.id) return;
   const c = {
     id: nuevoId(), pista: pista.id, medio: '', tipo: 'texto',
     t: Math.max(E.t, 0), dur: 3, entrada: 0, veloc: 1, volumen: 1,
@@ -1395,8 +1437,41 @@ function conectarArrastreRotulo() {
 }
 
 /* ═════════════════════════════════════════════════════════ exportar */
+function tramosSinImagen() {
+  /* Donde no hay NINGUN clip con imagen. Esos tramos salen en negro, y en la
+     vista previa es facil no darse cuenta: si estabas mirando la parte del
+     principio, el hueco del final no se ve hasta que exportas y lo abres. */
+  const total = duracionTotal();
+  if (total <= 0) return [];
+  const pistas = new Set(E.montaje.pistas.filter((p) => !p.oculta).map((p) => p.id));
+  const cubre = E.montaje.clips
+    .filter((c) => pistas.has(c.pista) && (c.tipo === 'texto' ? false : (() => {
+      const m = E.medios.get(c.medio);
+      return m && m.tipo !== 'audio';
+    })()))
+    .map((c) => [c.t, c.t + c.dur])
+    .sort((a, b) => a[0] - b[0]);
+  const huecos = [];
+  let cursor = 0;
+  for (const [a, b] of cubre) {
+    if (a > cursor + 0.12) huecos.push([cursor, a]);
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < total - 0.12) huecos.push([cursor, total]);
+  return huecos;
+}
+
 async function exportar() {
   const dlg = $('#dlg-exportar');
+  const huecos = tramosSinImagen();
+  const negro = huecos.reduce((a, [x, y]) => a + (y - x), 0);
+  $('#exp-aviso').hidden = negro < 0.15;
+  if (negro >= 0.15) {
+    const donde = huecos.slice(0, 3).map(([a, b]) => `${RELOJ(a)}–${RELOJ(b)}`).join(', ');
+    $('#exp-aviso').textContent =
+      `Hay ${negro.toFixed(1)} s sin imagen (${donde}${huecos.length > 3 ? '…' : ''}). ` +
+      'Ese tramo saldrá en negro.';
+  }
   $('#exp-resumen').textContent =
     `${E.montaje.clips.length} clip(s) · ${RELOJ(duracionTotal())} · ` +
     `${E.montaje.lienzo.w}×${E.montaje.lienzo.h}`;
