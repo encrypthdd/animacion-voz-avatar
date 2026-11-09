@@ -55,7 +55,9 @@ TEXTO_POR_DEFECTO = {
     'color': '#FFFFFF', 'contorno': 0.14, 'color_contorno': '#000000',
     'caja': False, 'color_caja': '#000000', 'alfa_caja': 0.55,
     'x': 0.5, 'y': 0.78, 'align': 'centro', 'fundido': 0.25,
+    'karaoke': False, 'color_activo': '#FFD60A', 'palabras': [],
 }
+MAX_PALABRAS = 40      # por rotulo: una linea de subtitulo no lleva mas
 
 
 def _color(v, defecto):
@@ -88,6 +90,22 @@ def _limpiar_texto(c):
     d['color'] = _color(c.get('color'), d['color'])
     d['color_contorno'] = _color(c.get('color_contorno'), d['color_contorno'])
     d['color_caja'] = _color(c.get('color_caja'), d['color_caja'])
+    d['color_activo'] = _color(c.get('color_activo'), d['color_activo'])
+    d['karaoke'] = bool(c.get('karaoke'))
+    # Las palabras de un subtitulo, con su momento MEDIDO DESDE EL PRINCIPIO
+    # DEL CLIP: asi el rotulo se puede mover por la linea de tiempo sin que se
+    # desarme el resaltado.
+    pal = []
+    for w in (c.get('palabras') or [])[:MAX_PALABRAS]:
+        if not isinstance(w, dict):
+            continue
+        t0 = _num(w.get('t0'), 0, 0, MAX_DUR)
+        t1 = _num(w.get('t1'), t0, 0, MAX_DUR)
+        pal.append({'w': str(w.get('w') or '')[:40],
+                    't0': round(t0, 3), 't1': round(max(t1, t0), 3)})
+    d['palabras'] = pal
+    if not pal:
+        d['karaoke'] = False
     return d
 
 

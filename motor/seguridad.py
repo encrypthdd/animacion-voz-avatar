@@ -49,8 +49,11 @@ RUTAS = {
     '/api/muestra': 'muestra', '/entrar': 'entrar',
     # el orden importa: se coge el primer prefijo que encaje, y borrar un
     # medio no debe gastar el cupo de subir uno nuevo
-    '/api/medios/borrar': 'general',
+    # subir un medio es '/api/medios' a secas; todo lo que cuelga de el
+    # (borrar, leer las palabras de una voz) es barato y no gasta ese cupo
+    '/api/medios/': 'general',
     '/api/medios': 'subir', '/api/exportar': 'generar',
+    '/api/voz': 'sticker',   # locutar cuesta segundos y sale a internet
 }
 
 _cubos = {}

@@ -44,8 +44,34 @@ ACEPTADAS = VIDEO | IMAGEN | AUDIO
 
 
 def _dirs():
-    for d in ('orig', 'copia', 'tira', 'poster', 'picos'):
+    for d in ('orig', 'copia', 'tira', 'poster', 'picos', 'palabras'):
         os.makedirs(os.path.join(BASE, d), exist_ok=True)
+
+
+def guardar_palabras(mid, palabras):
+    """Los tiempos de cada palabra de una voz locutada.
+
+    Van en un archivo aparte y no dentro del catalogo porque son cientos de
+    entradas por pista: metidas en `medios.json` lo harian pesar megas y
+    habria que leerlas enteras cada vez que la interfaz pide la lista.
+    """
+    _dirs()
+    with open(os.path.join(BASE, 'palabras', mid + '.json'), 'w',
+              encoding='utf-8') as f:
+        json.dump(palabras, f, ensure_ascii=False)
+    cat = _catalogo()
+    if mid in cat:
+        cat[mid]['palabras'] = True
+        _guardar(cat)
+
+
+def palabras(mid):
+    try:
+        with open(os.path.join(BASE, 'palabras', mid + '.json'),
+                  encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
 
 
 def _catalogo():
@@ -272,6 +298,7 @@ def ficha(m):
         f['tira'] = f'/medios/tira/{mid}.jpg'
     if m.get('picos'):
         f['picos_url'] = f'/medios/picos/{mid}.json'
+    f['palabras'] = bool(m.get('palabras'))
     return f
 
 
@@ -297,7 +324,7 @@ def ruta(mid):
 def borrar_archivos(mid):
     for d, patron in (('orig', mid + '.*'), ('copia', mid + '.*'),
                       ('tira', mid + '.*'), ('poster', mid + '.*'),
-                      ('picos', mid + '.*')):
+                      ('picos', mid + '.*'), ('palabras', mid + '.*')):
         for p in glob.glob(os.path.join(BASE, d, patron)):
             try:
                 os.remove(p)

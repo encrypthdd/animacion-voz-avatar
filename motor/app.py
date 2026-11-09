@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
 import audio as mezcla
 import avatar, crear, estilo, exportar, fondos, medios, medir, montaje, musica
-import poses, render, seguridad, sticker
+import poses, render, seguridad, sticker, voz
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, 'web')
@@ -649,7 +649,8 @@ def archivo_medio(sub, nombre):
 @app.get('/api/editor/inicio')
 def api_editor_inicio():
     return jsonify({'medios': medios.listar(), 'montajes': montaje.listar(),
-                    'lienzos': montaje.LIENZOS, 'clave': CLAVE_ACTIVA})
+                    'lienzos': montaje.LIENZOS, 'voces': voces(),
+                    'clave': CLAVE_ACTIVA})
 
 
 @app.post('/api/medios')
@@ -711,7 +712,9 @@ def api_montaje_borrar():
     return jsonify({'ok': ok})
 
 
-MAX_ROTULOS = 200
+MAX_ROTULOS = 300          # clips de texto por exportacion
+MAX_TROZOS = 60            # imagenes por rotulo (una por palabra resaltada)
+MAX_IMAGENES = 900         # tope duro, para que no llene el disco
 MAX_ROTULO_BYTES = 3 * 1024 * 1024
 
 
@@ -720,37 +723,86 @@ def guardar_rotulos(crudos, carpeta):
 
     Vienen como data URL porque las dibuja el mismo codigo que pinta la vista
     previa, que es lo que garantiza que el MP4 salga igual que lo que se vio.
-    Aqui solo se comprueba que son PNG y que no vienen hinchadas.
+
+    Cada rotulo es una LISTA de trozos: un subtitulo que resalta la palabra
+    que se esta diciendo cambia de aspecto varias veces mientras dura, y cada
+    cambio es una imagen con su tramo. Uno normal trae un solo trozo.
+
+    Aqui solo se comprueba que son PNG de verdad y que no vienen hinchadas.
     """
     import base64
     os.makedirs(carpeta, exist_ok=True)
-    salida = {}
-    for cid, r in list((crudos or {}).items())[:MAX_ROTULOS]:
-        if not isinstance(r, dict):
-            continue
-        dato = str(r.get('png') or '')
-        cabecera = 'data:image/png;base64,'
-        if not dato.startswith(cabecera):
-            continue
-        try:
-            crudo = base64.b64decode(dato[len(cabecera):], validate=True)
-        except (ValueError, TypeError):
-            continue
-        firma_png = bytes([0x89, 0x50, 0x4E, 0x47])
-        if crudo[:4] != firma_png or len(crudo) > MAX_ROTULO_BYTES:
+    cabecera = 'data:image/png;base64,'
+    firma_png = bytes([0x89, 0x50, 0x4E, 0x47])
+    salida, puestas = {}, 0
+    for cid, trozos in list((crudos or {}).items())[:MAX_ROTULOS]:
+        if isinstance(trozos, dict):
+            trozos = [trozos]
+        if not isinstance(trozos, list):
             continue
         nombre = re.sub(r'[^A-Za-z0-9]', '', str(cid))[:16]
         if not nombre:
             continue
-        ruta = os.path.join(carpeta, nombre + '.png')
-        with open(ruta, 'wb') as f:
-            f.write(crudo)
-        try:
-            salida[cid] = {'ruta': ruta, 'x': int(float(r.get('x', 0))),
-                           'y': int(float(r.get('y', 0)))}
-        except (TypeError, ValueError):
-            salida[cid] = {'ruta': ruta, 'x': 0, 'y': 0}
+        limpios = []
+        for k, r in enumerate(trozos[:MAX_TROZOS]):
+            if not isinstance(r, dict) or puestas >= MAX_IMAGENES:
+                continue
+            dato = str(r.get('png') or '')
+            if not dato.startswith(cabecera):
+                continue
+            try:
+                crudo = base64.b64decode(dato[len(cabecera):], validate=True)
+            except (ValueError, TypeError):
+                continue
+            if crudo[:4] != firma_png or len(crudo) > MAX_ROTULO_BYTES:
+                continue
+            ruta = os.path.join(carpeta, f'{nombre}_{k}.png')
+            with open(ruta, 'wb') as f:
+                f.write(crudo)
+            puestas += 1
+            try:
+                limpios.append({'ruta': ruta,
+                                'x': int(float(r.get('x', 0))),
+                                'y': int(float(r.get('y', 0))),
+                                'desde': float(r.get('desde', 0)),
+                                'hasta': float(r.get('hasta', 0))})
+            except (TypeError, ValueError):
+                continue
+        if limpios:
+            salida[cid] = limpios
     return salida
+
+
+@app.post('/api/voz')
+def api_voz():
+    """Locuta un texto y lo mete en la biblioteca con sus tiempos por palabra."""
+    d = request.get_json(force=True, silent=True) or {}
+    texto = (d.get('texto') or '').strip()
+    if len(texto) < 2:
+        return jsonify({'ok': False, 'error': 'Escribe algo que locutar.'}), 400
+    if len(texto) > voz.MAX_TEXTO:
+        return jsonify({'ok': False, 'error':
+                        f'El texto pasa de {voz.MAX_TEXTO} caracteres.'}), 400
+    vid = d.get('voz')
+    if vid not in {v['id'] for v in voces()}:
+        return jsonify({'ok': False, 'error': 'Voz no válida.'}), 400
+    try:
+        vel = int(d.get('velocidad', 0))
+    except (TypeError, ValueError):
+        vel = 0
+    try:
+        ficha, palabras = voz.generar(texto, vid, f'{max(min(vel, 50), -50):+d}%')
+    except (ValueError, RuntimeError, OSError) as e:
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 400
+    return jsonify({'ok': True, 'medio': ficha, 'palabras': palabras})
+
+
+@app.get('/api/medios/<mid>/palabras')
+def api_palabras(mid):
+    pal = medios.palabras(re.sub(r'[^a-f0-9]', '', mid)[:32])
+    if pal is None:
+        abort(404)
+    return jsonify(pal)
 
 
 @app.post('/api/exportar')
@@ -774,6 +826,7 @@ def api_exportar():
     destino = os.path.join(MONTAJES, tid + '.mp4')
     carpeta_rotulos = os.path.join(AQUI, 'cache', 'rotulos', tid)
     try:
+        os.makedirs(carpeta_rotulos, exist_ok=True)
         rotulos = guardar_rotulos(d.get('rotulos'), carpeta_rotulos)
     except OSError as e:
         return jsonify({'error': f'No se pudieron guardar los rótulos: {e}'}), 500
@@ -803,7 +856,8 @@ def api_exportar():
             return
         try:
             exportar.exportar(p, destino, calidad, avisar=avance,
-                              cancelar=parar, rotulos=rotulos)
+                              cancelar=parar, rotulos=rotulos,
+                              trabajo=carpeta_rotulos)
             with _lock:
                 TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo')
         except Exception as e:

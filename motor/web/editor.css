@@ -247,3 +247,20 @@
 .fila-colores input[type=color]{width:30px; height:26px; padding:0; border:none;
   border-radius:7px; background:none; cursor:pointer}
 .fila-colores .interruptor input{width:16px; height:16px; accent-color:var(--violeta)}
+
+/* ------------------------------------------------------- voz y subtitulos */
+.plegable{border:1px solid var(--borde); border-radius:var(--r-s);
+  background:var(--carta); padding:0 11px}
+.plegable[open]{padding-bottom:12px}
+.plegable summary{cursor:pointer; padding:11px 0; font-size:13.5px;
+  font-weight:600; list-style:none; display:flex; align-items:center; gap:7px}
+.plegable summary::-webkit-details-marker{display:none}
+.plegable summary::before{content:"▸"; color:var(--violeta-claro);
+  transition:transform var(--t)}
+.plegable[open] summary::before{transform:rotate(90deg)}
+.plegable > *:not(summary){margin-bottom:9px}
+.plegable .boton{width:100%; justify-content:center}
+.interruptor-fila{display:flex; align-items:center; gap:8px; font-size:12.5px;
+  color:var(--suave); cursor:pointer}
+.interruptor-fila input{width:16px; height:16px; accent-color:var(--violeta)}
+#voz-id{width:100%}

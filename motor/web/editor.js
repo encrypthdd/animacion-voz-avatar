@@ -42,6 +42,7 @@ async function arrancar() {
   }
   d.medios.forEach((m) => E.medios.set(m.id, m));
   pintarMedios();
+  llenarVoces(d.voces);
 
   const ultimo = localStorage.getItem('montaje-abierto');
   if (ultimo && d.montajes.some((m) => m.id === ultimo)) {
@@ -564,7 +565,7 @@ function medirRotulo(g, c, W, H) {
            x: c.x * W - w / 2, y: c.y * H - h / 2 };
 }
 
-function pintarRotulo(g, c, W, H, alfa, dx, dy) {
+function pintarRotulo(g, c, W, H, alfa, dx, dy, activa) {
   const m = medirRotulo(g, c, W, H);
   const x0 = (dx === undefined ? m.x : dx), y0 = (dy === undefined ? m.y : dy);
   g.save();
@@ -591,16 +592,40 @@ function pintarRotulo(g, c, W, H, alfa, dx, dy) {
             : c.align === 'der' ? izq + util - ancho
             : izq + (util - ancho) / 2;
     const y = y0 + m.relleno + m.grueso + m.alto + m.salto * i;
-    if (m.grueso > 0.3) {
-      g.strokeStyle = c.color_contorno;
-      g.lineWidth = m.grueso * 2;
-      g.strokeText(linea, x, y);
+    if (!(c.karaoke && c.palabras && c.palabras.length)) {
+      if (m.grueso > 0.3) {
+        g.strokeStyle = c.color_contorno;
+        g.lineWidth = m.grueso * 2;
+        g.strokeText(linea, x, y);
+      }
+      g.fillStyle = c.color;
+      g.fillText(linea, x, y);
+      return;
     }
-    g.fillStyle = c.color;
-    g.fillText(linea, x, y);
+    /* Con resaltado hay que pintar palabra a palabra, porque solo una cambia
+       de color. Se dibujan todas con el mismo espaciado que tendria la linea
+       entera, para que al cambiar de palabra activa nada se mueva. */
+    let px = x;
+    for (const trozo of linea.split(' ')) {
+      const an = g.measureText(trozo + ' ').width;
+      if (m.grueso > 0.3) {
+        g.strokeStyle = c.color_contorno;
+        g.lineWidth = m.grueso * 2;
+        g.strokeText(trozo, px, y);
+      }
+      g.fillStyle = (activa && trozo === activa.w) ? c.color_activo : c.color;
+      g.fillText(trozo, px, y);
+      px += an;
+    }
   });
   g.restore();
   return m;
+}
+
+function palabraEn(c, dentro) {
+  /* Que palabra se esta diciendo, en segundos desde que empieza el rotulo. */
+  if (!c.karaoke || !c.palabras) return null;
+  return c.palabras.find((w) => dentro >= w.t0 - 0.03 && dentro <= w.t1 + 0.06) || null;
 }
 
 function alfaRotulo(c, t) {
@@ -634,6 +659,24 @@ function anadirTexto() {
   $('#t-texto').select();
 }
 
+function tramosRotulo(c) {
+  /* En que trozos se parte un rotulo. Uno normal es uno solo; uno con
+     resaltado cambia cada vez que cambia la palabra que se esta diciendo. */
+  if (!c.karaoke || !c.palabras || !c.palabras.length) {
+    return [{ desde: 0, hasta: c.dur, activa: null }];
+  }
+  const cortes = [];
+  let t = 0;
+  for (const w of c.palabras) {
+    if (w.t0 > t + 0.02) cortes.push({ desde: t, hasta: Math.min(w.t0, c.dur), activa: null });
+    const fin = Math.min(w.t1, c.dur);
+    if (fin > w.t0) cortes.push({ desde: Math.max(w.t0, 0), hasta: fin, activa: w });
+    t = fin;
+  }
+  if (t < c.dur - 0.02) cortes.push({ desde: t, hasta: c.dur, activa: null });
+  return cortes.filter((x) => x.hasta > x.desde + 0.01);
+}
+
 function rotulosParaExportar() {
   /* Cada rotulo, dibujado a la resolucion real del lienzo y recortado a su
      caja, para no mandar un PNG del tamano del video por cada texto. */
@@ -646,14 +689,265 @@ function rotulosParaExportar() {
     const marco = Math.ceil(m.grueso + 4);
     const w = Math.max(Math.ceil(m.w) + 2 * marco, 2);
     const h = Math.max(Math.ceil(m.h) + 2 * marco, 2);
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    const g = cv.getContext('2d');
-    pintarRotulo(g, c, L.w, L.h, 1, marco, marco);
-    salida[c.id] = { png: cv.toDataURL('image/png'),
-                     x: Math.round(m.x - marco), y: Math.round(m.y - marco) };
+    salida[c.id] = tramosRotulo(c).map((tr) => {
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      pintarRotulo(cv.getContext('2d'), c, L.w, L.h, 1, marco, marco, tr.activa);
+      return { png: cv.toDataURL('image/png'),
+               x: Math.round(m.x - marco), y: Math.round(m.y - marco),
+               desde: Math.round(tr.desde * 1000) / 1000,
+               hasta: Math.round(tr.hasta * 1000) / 1000 };
+    });
   }
   return salida;
+}
+
+
+/* ═══════════════════════════════════════════ subtitulos automaticos
+ *
+ * No hay transcripcion aqui, y no hace falta: cuando la voz la genera el
+ * propio programa, el servicio devuelve en que milisegundo empieza y acaba
+ * cada palabra. Los subtitulos salen de ahi, asi que caen clavados.
+ *
+ * Con una voz GRABADA esto no existe y habria que reconocer el habla. Es la
+ * mitad del problema que todavia no esta hecha, y conviene no confundirlas.
+ */
+const DURO = new Set(['.', ';', ':', '!', '?', '…']);
+const SUB = {           // como se agrupan las palabras en subtitulos
+  segundos: 2.4,        // lo que dura como mucho un subtitulo
+  hueco: 0.35,          // silencio que obliga a cortar
+  anchoLinea: 0.86,     // ancho util de UNA linea, respecto al lienzo
+  lineas: 2,            // lineas por subtitulo
+  anchoComa: 1.0,       // a partir de ahi, una coma ya corta
+};
+const ESTILO_SUB = {
+  fuente: 'gruesa', tam: 0.052, color: '#FFFFFF', contorno: 0.17,
+  color_contorno: '#0C0818', caja: false, color_caja: '#000000',
+  alfa_caja: 0.55, x: 0.5, y: 0.8, align: 'centro', fundido: 0,
+  karaoke: true, color_activo: '#FFD60A',
+};
+
+function agrupar(palabras, L) {
+  /* Mismas reglas que usa el estudio de avatares, para que los subtitulos
+     tengan el mismo ritmo: corta por fin de frase, por silencio, cuando la
+     linea se pasa de ancha o cuando dura demasiado. */
+  const g = document.createElement('canvas').getContext('2d');
+  g.font = fuenteDe(ESTILO_SUB, L.h);
+  const ancho = (ws) => g.measureText(ws.map((x) => x.w).join(' ')).width;
+  const cabe = SUB.anchoLinea * L.w;
+  /* Lo que decide si un grupo es demasiado largo no es su ancho total, sino si
+     se puede repartir en dos lineas sin que ninguna se salga. Medir solo el
+     total deja pasar grupos que luego no hay por donde partir, y el subtitulo
+     acaba con una palabra sola arriba. */
+  const repartible = (ws) => {
+    const t = ws.map((x) => x.w);
+    if (g.measureText(t.join(' ')).width <= cabe) return true;
+    for (let k = 1; k < t.length; k++) {
+      if (g.measureText(t.slice(0, k).join(' ')).width <= cabe &&
+          g.measureText(t.slice(k).join(' ')).width <= cabe) return true;
+    }
+    return false;
+  };
+  const grupos = [];
+  let cur = [];
+  for (const w of palabras) {
+    const punt = w.p || '';
+    const salto = cur.length && (w.t0 - cur[cur.length - 1].t1) > SUB.hueco;
+    const tr = cur.concat([w]);
+    if (cur.length && (!repartible(tr) ||
+                       (tr[tr.length - 1].t1 - tr[0].t0) > SUB.segundos || salto)) {
+      grupos.push(cur); cur = [w];
+    } else {
+      cur = tr;
+    }
+    const corta = [...punt].some((ch) => DURO.has(ch)) ||
+                  (punt.includes(',') && ancho(cur) > SUB.anchoComa * L.w);
+    if (cur.length && corta) { grupos.push(cur); cur = []; }
+  }
+  if (cur.length) grupos.push(cur);
+  // una palabra sola queda huerfana: se le pasa la ultima del grupo anterior
+  for (let i = 1; i < grupos.length; i++) {
+    if (grupos[i].length === 1 && grupos[i - 1].length >= 3) {
+      const ult = grupos[i - 1][grupos[i - 1].length - 1];
+      if (![...(ult.p || '')].some((ch) => DURO.has(ch)) &&
+          repartible([ult].concat(grupos[i]))) {
+        grupos[i].unshift(grupos[i - 1].pop());
+      }
+    }
+  }
+  return grupos;
+}
+
+function repartirLineas(grupo, L) {
+  /* Parte el grupo en hasta dos lineas sin pasarse de ancho.
+     Permitir la segunda linea es lo que deja frasear bien: con una sola, un
+     subtitulo grande cabe en tres palabras y las frases quedan cortadas por
+     donde no toca ("diez videos se" / "pierden en los"). */
+  const g = document.createElement('canvas').getContext('2d');
+  g.font = fuenteDe(ESTILO_SUB, L.h);
+  const cabe = SUB.anchoLinea * L.w;
+  const palabras = grupo.map((w) => w.w);
+  if (g.measureText(palabras.join(' ')).width <= cabe) return palabras.join(' ');
+  // El corte que deja la linea mas larga lo mas corta posible. Buscar el mas
+  // parejo "siempre que quepa" deja sin respuesta a los grupos que no caben, y
+  // entonces hay que elegir igual: mejor el menos malo que una palabra suelta.
+  let mejor = 1, peor = Infinity;
+  for (let k = 1; k < palabras.length; k++) {
+    const a = g.measureText(palabras.slice(0, k).join(' ')).width;
+    const b = g.measureText(palabras.slice(k).join(' ')).width;
+    if (Math.max(a, b) < peor) { peor = Math.max(a, b); mejor = k; }
+  }
+  return palabras.slice(0, mejor).join(' ') + SALTO + palabras.slice(mejor).join(' ');
+}
+
+function pistaLibreArriba() {
+  /* Una pista de video por encima de todo, para que los subtitulos no tapen
+     nada que importe ni se los coma otro clip. */
+  const arriba = E.montaje.pistas.find((p) => p.tipo === 'video');
+  const ocupada = E.montaje.clips.some((c) => arriba && c.pista === arriba.id);
+  if (arriba && !ocupada) return arriba.id;
+  const id = 'v' + nuevoId().slice(0, 4);
+  E.montaje.pistas.unshift({ id, tipo: 'video', nombre: 'Subtítulos',
+                             muda: false, oculta: false });
+  pintarPistas();
+  return id;
+}
+
+function ponerSubtitulos(palabras, desfase, recorte) {
+  /* Crea un rotulo por grupo de palabras. `desfase` es donde empieza el audio
+     en la linea de tiempo; `recorte` es [entrada, fin] del clip de audio, para
+     no poner subtitulos de un trozo que no se oye. */
+  const L = E.montaje.lienzo;
+  const pista = pistaLibreArriba();
+  const [ini, fin] = recorte || [0, Infinity];
+  const grupos = agrupar(palabras, L);
+  /* A cada subtitulo se le da una cola para que no desaparezca en seco al
+     acabar la ultima palabra. Pero esa cola NO puede morder al siguiente: si
+     se pisan, los dos se dibujan a la vez y el texto sale superpuesto. */
+  const tramos = grupos.map((g) => ({
+    g, a: Math.max(g[0].t0, ini), b: Math.min(g[g.length - 1].t1 + 0.18, fin),
+  }));
+  for (let i = 0; i < tramos.length - 1; i++) {
+    tramos[i].b = Math.min(tramos[i].b, tramos[i + 1].a);
+  }
+  let puestos = 0;
+  for (const { g: grupo, a, b } of tramos) {
+    const t0 = grupo[0].t0, t1 = grupo[grupo.length - 1].t1;
+    if (t1 <= ini || t0 >= fin) continue;
+    if (b - a < 0.08) continue;
+    const c = {
+      id: nuevoId(), pista, medio: '', tipo: 'texto',
+      t: Math.round((desfase + a - ini) * 1000) / 1000,
+      dur: Math.round((b - a) * 1000) / 1000,
+      entrada: 0, veloc: 1, volumen: 1, opacidad: 1, encaje: 'cubrir',
+      texto: repartirLineas(grupo, L),
+      palabras: grupo.map((w) => ({ w: w.w,
+                                    t0: Math.round((w.t0 - a) * 1000) / 1000,
+                                    t1: Math.round((w.t1 - a) * 1000) / 1000 })),
+      ...ESTILO_SUB,
+    };
+    c.nombre = c.texto.slice(0, 40);
+    E.montaje.clips.push(c);
+    puestos++;
+  }
+  return puestos;
+}
+
+async function palabrasDe(medioId) {
+  try {
+    const r = await pedir('/api/medios/' + medioId + '/palabras');
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function subtitularClip() {
+  /* Subtitula el clip elegido, si su audio lo genero el programa. */
+  const c = clip(E.elegido);
+  if (!c || c.tipo === 'texto') {
+    error('Elige el clip de voz al que quieras ponerle subtítulos.');
+    return;
+  }
+  const m = E.medios.get(c.medio);
+  if (!m || !m.palabras) {
+    error('Ese clip no trae los tiempos de sus palabras. Los subtítulos ' +
+          'automáticos solo funcionan con la voz que genera el propio editor; ' +
+          'una voz grabada necesitaría reconocimiento del habla.');
+    return;
+  }
+  const pal = await palabrasDe(c.medio);
+  if (!pal) { error('No se pudieron leer los tiempos de esa voz.'); return; }
+  const n = ponerSubtitulos(pal, c.t, [c.entrada, c.entrada + c.dur * c.veloc]);
+  error(n ? '' : 'No salió ningún subtítulo en ese tramo.');
+  cambiado({ paso: 'subtitular' + nuevoId() });
+  pintarInspector();
+}
+
+async function generarVoz() {
+  const texto = $('#voz-texto').value.trim();
+  if (texto.length < 2) { error('Escribe el guion que quieres locutar.'); return; }
+  const boton = $('#voz-generar');
+  boton.disabled = true;
+  const antes = boton.textContent;
+  boton.textContent = 'Locutando…';
+  try {
+    const r = await pedir('/api/voz', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto, voz: $('#voz-id').value,
+                             velocidad: +$('#voz-vel').value }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'no se pudo locutar');
+    E.medios.set(d.medio.id, d.medio);
+    pintarMedios();
+
+    const pistaAudio = E.montaje.pistas.find((p) => p.tipo === 'audio');
+    const inicio = E.t;
+    if (pistaAudio) {
+      const c = {
+        id: nuevoId(), pista: pistaAudio.id, medio: d.medio.id,
+        t: inicio, dur: d.medio.dur, entrada: 0, veloc: 1, volumen: 1,
+        opacidad: 1, encaje: 'cubrir', nombre: d.medio.nombre,
+      };
+      c.t = acomodar(c, c.t);
+      E.montaje.clips.push(c);
+      E.elegido = c.id;
+      if ($('#voz-subs').checked) {
+        ponerSubtitulos(d.palabras, c.t, [0, d.medio.dur]);
+      }
+    }
+    error('');
+    cambiado({ paso: 'voz' + nuevoId() });
+    pintarInspector();
+  } catch (e) {
+    error('Voz: ' + e.message);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = antes;
+  }
+}
+
+function llenarVoces(voces) {
+  const sel = $('#voz-id');
+  if (!sel || !voces) return;
+  const porPais = {};
+  for (const v of voces) (porPais[v.pais] = porPais[v.pais] || []).push(v);
+  sel.textContent = '';
+  for (const pais of Object.keys(porPais).sort()) {
+    const g = document.createElement('optgroup');
+    g.label = pais;
+    for (const v of porPais[pais]) {
+      const o = document.createElement('option');
+      o.value = v.id;
+      o.textContent = `${v.id.split('-')[2].replace('Neural', '')} · ${v.genero}`;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  const guardada = localStorage.getItem('voz-editor');
+  if (guardada && voces.some((v) => v.id === guardada)) sel.value = guardada;
+  else if (voces.some((v) => v.id === 'es-MX-JorgeNeural')) sel.value = 'es-MX-JorgeNeural';
+  sel.onchange = () => localStorage.setItem('voz-editor', sel.value);
 }
 
 /* ═════════════════════════════════════════════ vista previa en canvas */
@@ -744,7 +1038,8 @@ function dibujar() {
     if (c.tipo === 'texto') {
       const pistaT = E.montaje.pistas.find((p) => p.id === c.pista);
       if (!pistaT || !pistaT.oculta) {
-        pintarRotulo(g, c, cv.width, cv.height, alfaRotulo(c, E.t));
+        pintarRotulo(g, c, cv.width, cv.height, alfaRotulo(c, E.t),
+                     undefined, undefined, palabraEn(c, E.t - c.t));
       }
       continue;
     }
@@ -1176,6 +1471,13 @@ function conectar() {
   propTexto('#t-caja', 'caja', 'bool'); propTexto('#t-color-caja', 'color_caja');
   propTexto('#t-fundido', 'fundido', 'num');
   $('#btn-texto').onclick = anadirTexto;
+  $('#btn-subtitular').onclick = subtitularClip;
+  $('#voz-generar').onclick = generarVoz;
+  $('#voz-vel').oninput = () => {
+    $('#o-voz-vel').textContent = ($('#voz-vel').value > 0 ? '+' : '') +
+                                  $('#voz-vel').value + '%';
+  };
+  $('#voz-vel').oninput();
   conectarArrastreRotulo();
 
   $('#btn-deshacer').onclick = () => viajar(-1);

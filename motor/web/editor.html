@@ -64,6 +64,28 @@
       <p class="mini">MP4, MOV, PNG, JPG, MP3, WAV…</p>
     </div>
 
+    <details class="plegable" id="bloque-voz">
+      <summary>Voz y subtítulos</summary>
+      <p class="mini tenue">Escribe el guion y se locuta. Los subtítulos salen
+         clavados porque vienen con la voz, palabra a palabra.</p>
+      <label class="campo-alto" for="voz-texto">Guion
+        <textarea id="voz-texto" class="campo" rows="3" maxlength="3000"
+                  placeholder="Nueve de cada diez vídeos se pierden en los primeros tres segundos."></textarea>
+      </label>
+      <label class="campo-fila">Voz
+        <select id="voz-id" class="campo campo-mini"></select>
+      </label>
+      <label class="campo-fila">Velocidad
+        <input type="range" id="voz-vel" min="-30" max="40" step="1" value="9">
+        <output id="o-voz-vel"></output>
+      </label>
+      <label class="interruptor-fila">
+        <input type="checkbox" id="voz-subs" checked>
+        Poner los subtítulos en la línea de tiempo
+      </label>
+      <button id="voz-generar" class="boton">Locutar y añadir</button>
+    </details>
+
     <ul id="lista-medios" class="lista-medios"></ul>
     <p id="vacio-medios" class="mini tenue">Aún no has importado nada.</p>
   </section>
@@ -102,6 +124,10 @@
       </button>
       <button id="btn-texto" class="icono" title="Añadir rótulo (T)" aria-label="Añadir un rótulo">
         <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
+      </button>
+      <button id="btn-subtitular" class="icono" title="Subtitular el clip de voz elegido"
+              aria-label="Poner subtítulos al clip elegido">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 14h4M14 14h3"/></svg>
       </button>
     </div>
 
