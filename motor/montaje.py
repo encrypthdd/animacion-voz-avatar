@@ -36,6 +36,60 @@ MAX_PISTAS = 12
 MAX_DUR = 60 * 20          # 20 minutos de montaje
 ENCAJES = ('cubrir', 'contener', 'estirar')
 
+# ─── Clips de texto ────────────────────────────────────────────────────────
+# Un rotulo es un clip mas: ocupa un tramo de una pista y se superpone a lo
+# que haya debajo. La diferencia es que no sale de ningun archivo, asi que no
+# tiene `medio` ni `entrada`.
+#
+# Lo que se guarda aqui es la DESCRIPCION del rotulo, no su imagen. La imagen
+# la dibuja el navegador, tanto en la vista previa como al exportar, y por eso
+# el MP4 sale exactamente igual que lo que viste. Dibujarlo dos veces -una en
+# el navegador y otra con drawtext de FFmpeg- es lo que hace que en casi todos
+# los editores caseros el texto acabe un poco mas grande, o partido en otro
+# sitio, en el video final.
+FUENTES = ('gruesa', 'redonda', 'serif', 'maquina')
+ALINEACIONES = ('izq', 'centro', 'der')
+MAX_TEXTO = 400
+TEXTO_POR_DEFECTO = {
+    'texto': 'Tu texto aquí', 'fuente': 'gruesa', 'tam': 0.062,
+    'color': '#FFFFFF', 'contorno': 0.14, 'color_contorno': '#000000',
+    'caja': False, 'color_caja': '#000000', 'alfa_caja': 0.55,
+    'x': 0.5, 'y': 0.78, 'align': 'centro', 'fundido': 0.25,
+}
+
+
+def _color(v, defecto):
+    v = str(v or '')
+    if len(v) == 7 and v[0] == '#':
+        try:
+            int(v[1:], 16)
+            return v.upper()
+        except ValueError:
+            pass
+    return defecto
+
+
+def _limpiar_texto(c):
+    """Los campos propios de un rotulo, dentro de limites razonables."""
+    d = dict(TEXTO_POR_DEFECTO)
+    t = str(c.get('texto') or '')[:MAX_TEXTO]
+    d['texto'] = t if t.strip() else TEXTO_POR_DEFECTO['texto']
+    if c.get('fuente') in FUENTES:
+        d['fuente'] = c['fuente']
+    if c.get('align') in ALINEACIONES:
+        d['align'] = c['align']
+    d['tam'] = round(_num(c.get('tam'), d['tam'], 0.015, 0.30), 4)
+    d['contorno'] = round(_num(c.get('contorno'), d['contorno'], 0, 0.4), 3)
+    d['x'] = round(_num(c.get('x'), d['x'], -0.2, 1.2), 4)
+    d['y'] = round(_num(c.get('y'), d['y'], -0.2, 1.2), 4)
+    d['fundido'] = round(_num(c.get('fundido'), d['fundido'], 0, 2.0), 3)
+    d['alfa_caja'] = round(_num(c.get('alfa_caja'), d['alfa_caja'], 0, 1), 3)
+    d['caja'] = bool(c.get('caja'))
+    d['color'] = _color(c.get('color'), d['color'])
+    d['color_contorno'] = _color(c.get('color_contorno'), d['color_contorno'])
+    d['color_caja'] = _color(c.get('color_caja'), d['color_caja'])
+    return d
+
 
 def _ahora():
     return time.strftime('%Y-%m-%d %H:%M')
@@ -123,8 +177,9 @@ def limpiar(p, medios=None):
         if pista not in ids_pista:
             descartados += 1
             continue
-        m = medios.get(mid) if medios is not None else None
-        if medios is not None and not m:
+        es_texto = c.get('tipo') == 'texto'
+        m = medios.get(mid) if (medios is not None and not es_texto) else None
+        if medios is not None and not es_texto and not m:
             descartados += 1
             continue
         dur = _num(c.get('dur'), 0, 0.04, MAX_DUR)
@@ -133,7 +188,7 @@ def limpiar(p, medios=None):
             continue
         clip = {
             'id': str(c.get('id') or uuid.uuid4().hex[:10])[:16],
-            'pista': pista, 'medio': mid,
+            'pista': pista, 'medio': '' if es_texto else mid,
             't': round(_num(c.get('t'), 0, 0, MAX_DUR), 3),
             'dur': round(dur, 3),
             'entrada': round(_num(c.get('entrada'), 0, 0, MAX_DUR), 3),
@@ -143,6 +198,14 @@ def limpiar(p, medios=None):
             'encaje': c.get('encaje') if c.get('encaje') in ENCAJES else 'cubrir',
             'nombre': (str(c.get('nombre') or ''))[:80],
         }
+        if es_texto:
+            clip['tipo'] = 'texto'
+            clip['veloc'] = 1.0
+            clip['entrada'] = 0.0
+            clip.update(_limpiar_texto(c))
+            clip['nombre'] = clip['texto'].split(chr(10))[0][:40]
+            clips.append(clip)
+            continue
         # Un clip no puede pedir más archivo del que hay: al exportar, FFmpeg
         # rellenaría el final con el ultimo fotograma congelado sin avisar.
         if m and m.get('tipo') != 'imagen' and m.get('dur'):

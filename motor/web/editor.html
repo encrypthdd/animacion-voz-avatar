@@ -100,6 +100,9 @@
       <button id="btn-duplicar" class="icono" title="Duplicar clip (D)" aria-label="Duplicar el clip">
         <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
       </button>
+      <button id="btn-texto" class="icono" title="Añadir rótulo (T)" aria-label="Añadir un rótulo">
+        <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
+      </button>
     </div>
 
     <!-- propiedades del clip elegido -->
@@ -124,6 +127,48 @@
           <option value="estirar">Estirar</option>
         </select>
       </label>
+
+      <div id="inspector-texto" class="bloque-texto" hidden>
+        <label class="campo-alto" for="t-texto">Texto
+          <textarea id="t-texto" class="campo" rows="2" maxlength="400"
+                    placeholder="Escribe aquí. Cada línea va aparte."></textarea>
+        </label>
+        <p class="mini tenue">Arrástralo sobre la vista previa para colocarlo.</p>
+
+        <label class="campo-fila">Tipografía
+          <select id="t-fuente" class="campo campo-mini">
+            <option value="gruesa">Gruesa</option>
+            <option value="redonda">Redonda</option>
+            <option value="serif">Con remates</option>
+            <option value="maquina">Máquina</option>
+          </select>
+        </label>
+        <label class="campo-fila">Alineación
+          <select id="t-align" class="campo campo-mini">
+            <option value="centro">Centrada</option>
+            <option value="izq">Izquierda</option>
+            <option value="der">Derecha</option>
+          </select>
+        </label>
+        <label class="campo-fila">Tamaño
+          <input type="range" id="t-tam" min="0.02" max="0.22" step="0.002">
+          <output id="o-tam"></output>
+        </label>
+        <label class="campo-fila">Contorno
+          <input type="range" id="t-contorno" min="0" max="0.4" step="0.01">
+          <output id="o-contorno"></output>
+        </label>
+        <label class="campo-fila">Fundido
+          <input type="range" id="t-fundido" min="0" max="1.5" step="0.05">
+          <output id="o-fundido"></output>
+        </label>
+        <div class="fila-colores">
+          <label><input type="color" id="t-color"> Letra</label>
+          <label><input type="color" id="t-color-contorno"> Contorno</label>
+          <label><input type="color" id="t-color-caja"> Caja</label>
+          <label class="interruptor"><input type="checkbox" id="t-caja"> Caja detrás</label>
+        </div>
+      </div>
     </div>
   </section>
 </main>

@@ -331,6 +331,7 @@ function vecinoIzquierda(c) {
 
 function topeClip(c) {
   /* Hasta dónde puede estirarse: lo que queda de archivo. */
+  if (c.tipo === 'texto') return 3600;
   const m = E.medios.get(c.medio);
   if (!m || m.tipo === 'imagen') return 3600;
   return Math.max((m.dur - c.entrada) / c.veloc, 0.04);
@@ -454,11 +455,12 @@ function pintarTiempo() {
     const el = document.createElement('div');
     const m = E.medios.get(c.medio);
     el.className = 'clip' + (c.id === E.elegido ? ' elegido' : '') +
-                   (m && m.tipo === 'audio' ? ' audio' : '');
+                   (c.tipo === 'texto' ? ' texto'
+                    : (m && m.tipo === 'audio' ? ' audio' : ''));
     el.dataset.clip = c.id;
     el.style.left = px(c.t) + 'px';
     el.style.width = Math.max(px(c.dur), 8) + 'px';
-    Object.assign(el.style, fondoClip(c));
+    if (c.tipo !== 'texto') Object.assign(el.style, fondoClip(c));
     el.innerHTML = `<div class="asa izq"></div><div class="asa der"></div>
                     <div class="etiqueta">${c.nombre || (m ? m.nombre : '?')}${
                       c.veloc !== 1 ? ` · ${c.veloc.toFixed(2)}×` : ''}</div>`;
@@ -491,18 +493,167 @@ function moverCabezal() {
 function pintarInspector() {
   const c = clip(E.elegido);
   $('#inspector').hidden = !c;
+  $('#inspector-texto').hidden = !(c && c.tipo === 'texto');
   for (const b of ['#btn-cortar', '#btn-borrar', '#btn-duplicar']) $(b).disabled = !c;
   if (!c) return;
   const m = E.medios.get(c.medio);
   $('#inspector-nombre').textContent = c.nombre || (m ? m.nombre : 'Clip');
+  if (c.tipo === 'texto') {
+    if (document.activeElement !== $('#t-texto')) $('#t-texto').value = c.texto;
+    $('#t-fuente').value = c.fuente;
+    $('#t-align').value = c.align;
+    $('#t-tam').value = c.tam; $('#o-tam').textContent = Math.round(c.tam * 1000) / 10 + '%';
+    $('#t-color').value = c.color;
+    $('#t-contorno').value = c.contorno;
+    $('#o-contorno').textContent = Math.round(c.contorno * 100) + '%';
+    $('#t-color-contorno').value = c.color_contorno;
+    $('#t-caja').checked = c.caja;
+    $('#t-color-caja').value = c.color_caja;
+    $('#t-fundido').value = c.fundido;
+    $('#o-fundido').textContent = c.fundido.toFixed(2) + ' s';
+    $('#inspector-nombre').textContent = 'Rótulo';
+  }
   $('#p-veloc').value = c.veloc; $('#o-veloc').textContent = c.veloc.toFixed(2) + '×';
   $('#p-volumen').value = c.volumen; $('#o-volumen').textContent = Math.round(c.volumen * 100) + '%';
   $('#p-opacidad').value = c.opacidad; $('#o-opacidad').textContent = Math.round(c.opacidad * 100) + '%';
   $('#p-encaje').value = c.encaje;
-  const esVideo = m && m.tipo !== 'audio';
+  const texto = c.tipo === 'texto';
+  const esVideo = texto || (m && m.tipo !== 'audio');
+  $('#p-veloc').closest('.campo-fila').hidden = texto;
   $('#p-opacidad').closest('.campo-fila').hidden = !esVideo;
-  $('#p-encaje').closest('.campo-fila').hidden = !esVideo;
-  $('#p-volumen').closest('.campo-fila').hidden = !(m && (m.audio || m.tipo === 'audio'));
+  $('#p-encaje').closest('.campo-fila').hidden = !esVideo || texto;
+  $('#p-volumen').closest('.campo-fila').hidden =
+    texto || !(m && (m.audio || m.tipo === 'audio'));
+}
+
+
+/* ═══════════════════════════════════════════════════════════ rotulos
+ *
+ * Un rotulo se dibuja UNA sola vez, aqui, y esa misma funcion sirve para la
+ * vista previa y para la imagen que se manda al exportar. Es la unica forma
+ * de que el MP4 salga igual que lo que se ve: en cuanto el texto se dibuja
+ * dos veces con dos motores distintos, cambia el ancho de una letra, la linea
+ * parte en otro sitio y el rotulo acaba descuadrado en el video.
+ */
+const SALTO = String.fromCharCode(10);
+const FAMILIAS = {
+  gruesa:  '800 1px Inter, "Segoe UI", system-ui, sans-serif',
+  redonda: '600 1px "Trebuchet MS", Verdana, system-ui, sans-serif',
+  serif:   '700 1px Georgia, "Times New Roman", serif',
+  maquina: '600 1px "Courier New", ui-monospace, monospace',
+};
+
+function fuenteDe(c, H) {
+  const px = Math.max(c.tam * H, 6);
+  return FAMILIAS[c.fuente].replace('1px', px.toFixed(2) + 'px');
+}
+
+function medirRotulo(g, c, W, H) {
+  /* Caja que ocupa el rotulo en el lienzo, en pixeles. */
+  const lineas = String(c.texto).split(SALTO);
+  g.font = fuenteDe(c, H);
+  const alto = c.tam * H;
+  const salto = alto * 1.22;
+  const grueso = c.contorno * alto;
+  const anchos = lineas.map((l) => g.measureText(l).width);
+  const ancho = Math.max(...anchos, 1);
+  const relleno = c.caja ? alto * 0.34 : 0;
+  const w = ancho + 2 * (relleno + grueso);
+  const h = salto * lineas.length + 2 * (relleno + grueso) - (salto - alto) * 0.3;
+  return { lineas, anchos, alto, salto, grueso, relleno, w, h,
+           x: c.x * W - w / 2, y: c.y * H - h / 2 };
+}
+
+function pintarRotulo(g, c, W, H, alfa, dx, dy) {
+  const m = medirRotulo(g, c, W, H);
+  const x0 = (dx === undefined ? m.x : dx), y0 = (dy === undefined ? m.y : dy);
+  g.save();
+  g.globalAlpha = Math.max(Math.min(alfa, 1), 0);
+  if (c.caja) {
+    g.fillStyle = c.color_caja;
+    g.globalAlpha *= c.alfa_caja;
+    const r = Math.min(m.alto * 0.28, m.w / 2, m.h / 2);
+    g.beginPath();
+    if (g.roundRect) g.roundRect(x0, y0, m.w, m.h, r);
+    else g.rect(x0, y0, m.w, m.h);
+    g.fill();
+    g.globalAlpha = Math.max(Math.min(alfa, 1), 0);
+  }
+  g.font = fuenteDe(c, H);
+  g.textBaseline = 'alphabetic';
+  g.lineJoin = 'round';
+  g.miterLimit = 2;
+  const izq = x0 + m.relleno + m.grueso;
+  const util = m.w - 2 * (m.relleno + m.grueso);
+  m.lineas.forEach((linea, i) => {
+    const ancho = m.anchos[i];
+    const x = c.align === 'izq' ? izq
+            : c.align === 'der' ? izq + util - ancho
+            : izq + (util - ancho) / 2;
+    const y = y0 + m.relleno + m.grueso + m.alto + m.salto * i;
+    if (m.grueso > 0.3) {
+      g.strokeStyle = c.color_contorno;
+      g.lineWidth = m.grueso * 2;
+      g.strokeText(linea, x, y);
+    }
+    g.fillStyle = c.color;
+    g.fillText(linea, x, y);
+  });
+  g.restore();
+  return m;
+}
+
+function alfaRotulo(c, t) {
+  /* Entra y sale con fundido, igual que hara FFmpeg al exportar. */
+  const f = c.fundido || 0;
+  if (f <= 0.01) return c.opacidad;
+  const dentro = t - c.t, queda = c.t + c.dur - t;
+  const k = Math.min(dentro / f, queda / f, 1);
+  return c.opacidad * Math.max(k, 0);
+}
+
+function anadirTexto() {
+  const pista = E.montaje.pistas.find((p) => p.tipo === 'video');
+  if (!pista) return;
+  const c = {
+    id: nuevoId(), pista: pista.id, medio: '', tipo: 'texto',
+    t: Math.max(E.t, 0), dur: 3, entrada: 0, veloc: 1, volumen: 1,
+    opacidad: 1, encaje: 'cubrir',
+    texto: 'Tu texto aquí', fuente: 'gruesa', tam: 0.062,
+    color: '#FFFFFF', contorno: 0.14, color_contorno: '#000000',
+    caja: false, color_caja: '#000000', alfa_caja: 0.55,
+    x: 0.5, y: 0.78, align: 'centro', fundido: 0.25,
+  };
+  c.nombre = c.texto;
+  c.t = acomodar(c, c.t);
+  E.montaje.clips.push(c);
+  E.elegido = c.id;
+  cambiado({ paso: 'texto' + c.id });
+  pintarInspector();
+  $('#t-texto').focus();
+  $('#t-texto').select();
+}
+
+function rotulosParaExportar() {
+  /* Cada rotulo, dibujado a la resolucion real del lienzo y recortado a su
+     caja, para no mandar un PNG del tamano del video por cada texto. */
+  const L = E.montaje.lienzo;
+  const salida = {};
+  const medidor = document.createElement('canvas').getContext('2d');
+  for (const c of E.montaje.clips) {
+    if (c.tipo !== 'texto') continue;
+    const m = medirRotulo(medidor, c, L.w, L.h);
+    const marco = Math.ceil(m.grueso + 4);
+    const w = Math.max(Math.ceil(m.w) + 2 * marco, 2);
+    const h = Math.max(Math.ceil(m.h) + 2 * marco, 2);
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    pintarRotulo(g, c, L.w, L.h, 1, marco, marco);
+    salida[c.id] = { png: cv.toDataURL('image/png'),
+                     x: Math.round(m.x - marco), y: Math.round(m.y - marco) };
+  }
+  return salida;
 }
 
 /* ═════════════════════════════════════════════ vista previa en canvas */
@@ -590,6 +741,13 @@ function dibujar() {
   let maestro = true;   // el primer medio de la tanda manda en el reloj
 
   for (const c of activos(E.t)) {
+    if (c.tipo === 'texto') {
+      const pistaT = E.montaje.pistas.find((p) => p.id === c.pista);
+      if (!pistaT || !pistaT.oculta) {
+        pintarRotulo(g, c, cv.width, cv.height, alfaRotulo(c, E.t));
+      }
+      continue;
+    }
     const m = E.medios.get(c.medio);
     if (!m) continue;
     const pista = E.montaje.pistas.find((p) => p.id === c.pista);
@@ -731,7 +889,9 @@ function conectarArrastre() {
         if (p && p.dataset.pista !== c.pista) {
           const dest = E.montaje.pistas.find((x) => x.id === p.dataset.pista);
           const m = E.medios.get(c.medio);
-          if (dest && !(dest.tipo === 'audio' && m && m.tipo === 'imagen')) {
+          // en una pista de audio no pinta nada lo que no suena
+          const sinSonido = c.tipo === 'texto' || (m && m.tipo === 'imagen');
+          if (dest && !(dest.tipo === 'audio' && sinSonido)) {
             c.pista = dest.id;
           }
         }
@@ -815,6 +975,37 @@ function conectarArrastre() {
   });
 }
 
+function conectarArrastreRotulo() {
+  /* Colocar un rotulo con dos mandos de numeros es un suplicio: se arrastra
+     sobre la propia vista previa, que es donde se ve si queda bien. */
+  const cv = $('#lienzo');
+  cv.addEventListener('pointerdown', (ev) => {
+    const c = clip(E.elegido);
+    if (!c || c.tipo !== 'texto') return;
+    if (E.t < c.t || E.t >= c.t + c.dur) return;
+    const r = cv.getBoundingClientRect();
+    const ini = { x: c.x, y: c.y, px: ev.clientX, py: ev.clientY };
+    cv.setPointerCapture(ev.pointerId);
+    cv.classList.add('moviendo');
+    ev.preventDefault();
+    const mover = (e) => {
+      c.x = Math.min(Math.max(ini.x + (e.clientX - ini.px) / r.width, -0.2), 1.2);
+      c.y = Math.min(Math.max(ini.y + (e.clientY - ini.py) / r.height, -0.2), 1.2);
+    };
+    const soltar = () => {
+      cv.releasePointerCapture(ev.pointerId);
+      cv.classList.remove('moviendo');
+      cv.removeEventListener('pointermove', mover);
+      cv.removeEventListener('pointerup', soltar);
+      c.x = Math.round(c.x * 1e4) / 1e4; c.y = Math.round(c.y * 1e4) / 1e4;
+      cambiado({ repintar: false, paso: 'situar' + c.id });
+    };
+    cv.addEventListener('pointermove', mover);
+    cv.addEventListener('pointerup', soltar);
+    cv.addEventListener('pointercancel', soltar);
+  });
+}
+
 /* ═════════════════════════════════════════════════════════ exportar */
 async function exportar() {
   const dlg = $('#dlg-exportar');
@@ -841,7 +1032,8 @@ async function lanzarExportacion() {
   try {
     const r = await pedir('/api/exportar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ montaje: E.montaje, calidad: $('#exp-calidad').value }),
+      body: JSON.stringify({ montaje: E.montaje, calidad: $('#exp-calidad').value,
+                             rotulos: rotulosParaExportar() }),
     });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'no se pudo lanzar');
@@ -966,6 +1158,26 @@ function conectar() {
   prop('#p-veloc', 'veloc'); prop('#p-volumen', 'volumen');
   prop('#p-opacidad', 'opacidad'); prop('#p-encaje', 'encaje');
 
+  const propTexto = (sel, campo, tipo) => {
+    $(sel).oninput = () => {
+      const c = clip(E.elegido);
+      if (!c || c.tipo !== 'texto') return;
+      const n = $(sel);
+      c[campo] = tipo === 'num' ? +n.value : tipo === 'bool' ? n.checked : n.value;
+      if (campo === 'texto') c.nombre = String(c.texto).split(SALTO)[0].slice(0, 40);
+      pintarInspector();
+      cambiado({ paso: campo + c.id });
+    };
+  };
+  propTexto('#t-texto', 'texto'); propTexto('#t-fuente', 'fuente');
+  propTexto('#t-align', 'align'); propTexto('#t-tam', 'tam', 'num');
+  propTexto('#t-color', 'color'); propTexto('#t-contorno', 'contorno', 'num');
+  propTexto('#t-color-contorno', 'color_contorno');
+  propTexto('#t-caja', 'caja', 'bool'); propTexto('#t-color-caja', 'color_caja');
+  propTexto('#t-fundido', 'fundido', 'num');
+  $('#btn-texto').onclick = anadirTexto;
+  conectarArrastreRotulo();
+
   $('#btn-deshacer').onclick = () => viajar(-1);
   $('#btn-rehacer').onclick = () => viajar(1);
   $('#btn-exportar').onclick = exportar;
@@ -995,6 +1207,7 @@ function conectar() {
     else if (e.key === 'ArrowLeft') { e.preventDefault(); irA(E.t - salto); }
     else if (e.key === 's' || e.key === 'S') partir();
     else if (e.key === 'd' || e.key === 'D') duplicar();
+    else if (e.key === 't' || e.key === 'T') { e.preventDefault(); anadirTexto(); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); borrarClip(); }
     else if (e.key === 'Home') irA(0);
   });

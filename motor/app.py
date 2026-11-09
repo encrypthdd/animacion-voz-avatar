@@ -6,7 +6,8 @@
 Envuelve el motor existente: medir.py para dar de alta avatares, poses.py para
 las poses de recurso, crear.py para la voz y render.py para el montaje.
 """
-import asyncio, io, json, os, re, threading, time, traceback, unicodedata, uuid
+import asyncio, io, json, os, re, shutil, threading, time, traceback
+import unicodedata, uuid
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
@@ -710,6 +711,48 @@ def api_montaje_borrar():
     return jsonify({'ok': ok})
 
 
+MAX_ROTULOS = 200
+MAX_ROTULO_BYTES = 3 * 1024 * 1024
+
+
+def guardar_rotulos(crudos, carpeta):
+    """Vuelca a disco las imagenes de los rotulos que manda el navegador.
+
+    Vienen como data URL porque las dibuja el mismo codigo que pinta la vista
+    previa, que es lo que garantiza que el MP4 salga igual que lo que se vio.
+    Aqui solo se comprueba que son PNG y que no vienen hinchadas.
+    """
+    import base64
+    os.makedirs(carpeta, exist_ok=True)
+    salida = {}
+    for cid, r in list((crudos or {}).items())[:MAX_ROTULOS]:
+        if not isinstance(r, dict):
+            continue
+        dato = str(r.get('png') or '')
+        cabecera = 'data:image/png;base64,'
+        if not dato.startswith(cabecera):
+            continue
+        try:
+            crudo = base64.b64decode(dato[len(cabecera):], validate=True)
+        except (ValueError, TypeError):
+            continue
+        firma_png = bytes([0x89, 0x50, 0x4E, 0x47])
+        if crudo[:4] != firma_png or len(crudo) > MAX_ROTULO_BYTES:
+            continue
+        nombre = re.sub(r'[^A-Za-z0-9]', '', str(cid))[:16]
+        if not nombre:
+            continue
+        ruta = os.path.join(carpeta, nombre + '.png')
+        with open(ruta, 'wb') as f:
+            f.write(crudo)
+        try:
+            salida[cid] = {'ruta': ruta, 'x': int(float(r.get('x', 0))),
+                           'y': int(float(r.get('y', 0)))}
+        except (TypeError, ValueError):
+            salida[cid] = {'ruta': ruta, 'x': 0, 'y': 0}
+    return salida
+
+
 @app.post('/api/exportar')
 def api_exportar():
     d = request.get_json(force=True, silent=True) or {}
@@ -729,6 +772,16 @@ def api_exportar():
     tid = uuid.uuid4().hex
     os.makedirs(MONTAJES, exist_ok=True)
     destino = os.path.join(MONTAJES, tid + '.mp4')
+    carpeta_rotulos = os.path.join(AQUI, 'cache', 'rotulos', tid)
+    try:
+        rotulos = guardar_rotulos(d.get('rotulos'), carpeta_rotulos)
+    except OSError as e:
+        return jsonify({'error': f'No se pudieron guardar los rótulos: {e}'}), 500
+    faltan = [c for c in p['clips']
+              if c.get('tipo') == 'texto' and c['id'] not in rotulos]
+    if faltan:
+        return jsonify({'error': f'{len(faltan)} rótulo(s) no llegaron bien. '
+                                 'Vuelve a intentarlo.'}), 400
     with _lock:
         TRABAJOS[tid] = {'estado': 'cola', 'pct': 0, 'mensaje': 'En cola…',
                          'archivo': destino, 'dur': dur, 'cancelar': False}
@@ -749,7 +802,8 @@ def api_exportar():
                                              'Espera a que acabe.')
             return
         try:
-            exportar.exportar(p, destino, calidad, avisar=avance, cancelar=parar)
+            exportar.exportar(p, destino, calidad, avisar=avance,
+                              cancelar=parar, rotulos=rotulos)
             with _lock:
                 TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo')
         except Exception as e:
@@ -758,6 +812,7 @@ def api_exportar():
                 TRABAJOS[tid].update(estado='error', pct=0, mensaje=str(e)[:400])
         finally:
             seguridad.soltar_turno()
+            shutil.rmtree(carpeta_rotulos, ignore_errors=True)
 
     threading.Thread(target=faena, daemon=True).start()
     return jsonify({'id': tid})

@@ -51,12 +51,17 @@ def _atempo(veloc):
     return ','.join(f'atempo={p:.4f}' for p in pasos)
 
 
-def construir(p, destino, calidad='alta'):
+def construir(p, destino, calidad='alta', rotulos=None):
     """Devuelve (comando, duracion, grafo, carpeta). No ejecuta nada.
 
     El grafo de filtros NO va en el comando: se devuelve aparte para
     escribirlo en un archivo. Y los archivos de entrada se nombran relativos a
     `medios/orig`, por lo que FFmpeg se lanza desde ahi.
+
+    `rotulos` son las imagenes de los clips de texto, ya dibujadas por el
+    navegador: {id_de_clip: {'ruta': png, 'x': px, 'y': px}}. Un clip de texto
+    sin imagen se salta, porque dibujarlo aqui de otra manera daria un
+    resultado distinto al que la persona vio en la vista previa.
 
     Las dos cosas son por el mismo motivo. Windows corta la linea de comandos
     en 32767 caracteres, y un montaje de 81 clips ya la pasaba: el grafo solo
@@ -64,8 +69,11 @@ def construir(p, destino, calidad='alta'):
     en un archivo y nombres de 16 caracteres caben los 400 clips del tope.
     """
     cat = {m['id']: m for m in medios.listar()}
+    rotulos = rotulos or {}
     p = montaje.limpiar(p, cat)
-    clips = p['clips']
+    # Un rotulo sin imagen no se puede dibujar aqui: fuera, y que se note.
+    clips = [c for c in p['clips']
+             if c.get('tipo') != 'texto' or c['id'] in rotulos]
     if not clips:
         raise ValueError('El montaje está vacío: añade al menos un clip.')
 
@@ -76,13 +84,17 @@ def construir(p, destino, calidad='alta'):
     pistas = {t['id']: t for t in p['pistas']}
     # de abajo arriba: la última pista de la lista es la de más abajo
     orden = {t['id']: i for i, t in enumerate(reversed(p['pistas']))}
+    def es_texto(c):
+        return c.get('tipo') == 'texto'
+
     visibles = [c for c in clips
-                if pistas[c['pista']]['tipo'] == 'video'
-                and not pistas[c['pista']]['oculta']
-                and cat[c['medio']]['tipo'] != 'audio']
+                if not pistas[c['pista']]['oculta']
+                and (es_texto(c) or (pistas[c['pista']]['tipo'] == 'video'
+                                     and cat[c['medio']]['tipo'] != 'audio'))]
     visibles.sort(key=lambda c: (orden[c['pista']], c['t']))
     sonoros = [c for c in clips
-               if not pistas[c['pista']]['muda'] and c['volumen'] > 0
+               if not es_texto(c) and not pistas[c['pista']]['muda']
+               and c['volumen'] > 0
                and (cat[c['medio']].get('audio') or cat[c['medio']]['tipo'] == 'audio')]
 
     # Una entrada de FFmpeg por clip. El recorte se hace al abrir el archivo
@@ -90,6 +102,11 @@ def construir(p, destino, calidad='alta'):
     ent, filtros, etiquetas_v, etiquetas_a = [], [], [], []
     indice = {}
     for c in clips:
+        if es_texto(c):
+            indice[c['id']] = len(ent)
+            ent.append(['-loop', '1', '-t', f'{c["dur"]:.3f}',
+                        '-i', os.path.abspath(rotulos[c['id']]['ruta'])])
+            continue
         ruta = medios.ruta(c['medio'])
         if not ruta:
             continue
@@ -104,6 +121,21 @@ def construir(p, destino, calidad='alta'):
     for c in visibles:
         i = indice.get(c['id'])
         if i is None:
+            continue
+        if es_texto(c):
+            # La imagen ya viene al tamano del lienzo: solo hay que colocarla,
+            # desplazarla en el tiempo y, si toca, fundirla.
+            cad = ['format=rgba', f'fps={FPS}']
+            f = c.get('fundido', 0)
+            if f > 0.01:
+                cad.append(f'fade=t=in:st=0:d={f:.3f}:alpha=1')
+                cad.append(f'fade=t=out:st={max(c["dur"] - f, 0):.3f}:'
+                           f'd={f:.3f}:alpha=1')
+            if c['opacidad'] < 0.999:
+                cad.append(f'colorchannelmixer=aa={c["opacidad"]:.3f}')
+            cad.append(f'setpts=PTS-STARTPTS+{c["t"]:.3f}/TB')
+            filtros.append(f'[{i}:v]' + ','.join(cad) + f'[v{i}]')
+            etiquetas_v.append((i, c))
             continue
         cad = [_encaje(c['encaje'], W, H), 'setsar=1', f'fps={FPS}']
         if abs(c['veloc'] - 1.0) > 1e-3:
@@ -139,8 +171,12 @@ def construir(p, destino, calidad='alta'):
     for k, (i, c) in enumerate(etiquetas_v):
         fin = c['t'] + c['dur']
         sal = f'[m{k}]'
+        x, y = 0, 0
+        if es_texto(c):
+            x = int(rotulos[c['id']].get('x', 0))
+            y = int(rotulos[c['id']].get('y', 0))
         filtros.append(
-            f'{previo}[v{i}]overlay=0:0:eof_action=pass:'
+            f'{previo}[v{i}]overlay={x}:{y}:eof_action=pass:'
             f"enable='between(t,{c['t']:.3f},{fin:.3f})'{sal}")
         previo = sal
     filtros.append(f'{previo}format=yuv420p[vout]')
@@ -216,10 +252,11 @@ def _correr(cmd, carpeta, total, avisar, cancelar):
     return pr.returncode, (errores[0] if errores else '') or ''
 
 
-def exportar(p, destino, calidad='alta', avisar=None, cancelar=None):
+def exportar(p, destino, calidad='alta', avisar=None, cancelar=None,
+             rotulos=None):
     """Lanza FFmpeg y va informando del avance en tanto por ciento."""
     global _flag_grafo
-    cmd, total, grafo, carpeta = construir(p, destino, calidad)
+    cmd, total, grafo, carpeta = construir(p, destino, calidad, rotulos)
     os.makedirs(os.path.dirname(os.path.abspath(destino)) or '.', exist_ok=True)
     grafo_ruta = os.path.abspath(destino) + '.filtros.txt'
     with open(grafo_ruta, 'w', encoding='utf-8') as f:

@@ -79,7 +79,7 @@
 /* ------------------------------------------------------- vista previa */
 .panel-vista{align-items:center}
 .marco-vista{
-  flex:1; min-height:0; width:100%; display:grid; place-items:center;
+  flex:1 1 auto; min-height:170px; width:100%; display:grid; place-items:center;
   background:#05040A; border:1px solid var(--borde); border-radius:var(--r-s);
   overflow:hidden;
 }
@@ -103,8 +103,11 @@
 .reloj{font-variant-numeric:tabular-nums; color:var(--suave); font-size:13.5px;
   min-width:124px; text-align:center}
 
+/* El inspector de un rotulo es largo. Si crece sin freno deja la vista previa
+   del tamano de un sello, justo cuando mas falta hace verla. */
 .inspector{display:flex; flex-direction:column; gap:9px; width:100%;
-  border-top:1px solid var(--borde); padding-top:11px}
+  border-top:1px solid var(--borde); padding-top:11px;
+  flex:0 1 auto; max-height:46%; overflow-y:auto; padding-right:4px}
 .campo-fila{display:grid; grid-template-columns:86px minmax(0,1fr) 54px;
   align-items:center; gap:10px; font-size:13px; color:var(--suave)}
 .campo-fila output{font-variant-numeric:tabular-nums; text-align:right;
@@ -226,3 +229,21 @@
    suenen, pero no se ven. */
 #reproductores{position:fixed; left:-9999px; top:0; width:2px; height:2px;
   overflow:hidden; pointer-events:none}
+
+/* ------------------------------------------------------- rotulos */
+.clip.texto{background:linear-gradient(180deg,#3a2a52,#2a1d3d)}
+.clip.texto .etiqueta{background:none; text-shadow:0 1px 3px rgba(0,0,0,.9)}
+#lienzo.moviendo{cursor:grabbing}
+
+.bloque-texto{display:flex; flex-direction:column; gap:9px;
+  border-top:1px solid var(--borde); padding-top:11px; margin-top:2px}
+.campo-alto{display:flex; flex-direction:column; gap:5px; font-size:13px;
+  color:var(--suave)}
+.campo-alto textarea{resize:vertical; min-height:52px; font:inherit;
+  font-size:13.5px; line-height:1.4}
+.fila-colores{display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+  font-size:12.5px; color:var(--suave)}
+.fila-colores label{display:flex; align-items:center; gap:6px}
+.fila-colores input[type=color]{width:30px; height:26px; padding:0; border:none;
+  border-radius:7px; background:none; cursor:pointer}
+.fila-colores .interruptor input{width:16px; height:16px; accent-color:var(--violeta)}
