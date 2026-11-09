@@ -55,10 +55,17 @@ def recortar(ruta):
     # Al cruzarse las piernas quedan bolsas de fondo que el relleno no alcanza
     # desde el borde. Se quitan por color: la sombra es gris neutro, mientras
     # que dientes y tenis son calidos (saturacion mas alta).
+    # Bolsas de fondo que el relleno no alcanza desde el borde: la sombra del
+    # suelo entre las piernas, por ejemplo. Se quitan por color, porque la
+    # sombra es gris neutro y los dientes o los tenis son cálidos.
+    #
+    # El tope de tamaño NO es opcional: sin él esto se come una barba blanca o
+    # un ribete de piel, que también son zonas neutras grandes y encerradas.
     sueltas, n = ndimage.label(fondo & ~bg)
+    tope = 0.02 * (~bg).sum()
     for i in range(1, n + 1):
         m = sueltas == i
-        if m.sum() > 120 and mn[m].mean() > 205 and sat[m].mean() < 12:
+        if 120 < m.sum() < tope and mn[m].mean() > 205 and sat[m].mean() < 12:
             bg |= m
 
     alpha = Image.fromarray(np.where(bg, 0, 255).astype(np.uint8), 'L')
@@ -77,6 +84,24 @@ def nombre_de(ruta):
 
 def fuentes():
     return sorted(glob.glob(os.path.join(FUENTE, '*.[jp][pn]*g')))
+
+
+def borrar(nombre):
+    """Quita la pose recortada, su origen y la entrada del catalogo."""
+    import glob as _g
+    cat = {}
+    if os.path.exists(CATALOGO):
+        cat = json.load(open(CATALOGO, encoding='utf-8'))
+    hubo = nombre in cat
+    for p in (_g.glob(os.path.join(DESTINO, nombre + '.png'))
+              + _g.glob(os.path.join(FUENTE, nombre + '.*'))):
+        os.remove(p); hubo = True
+    if nombre in cat:
+        cat.pop(nombre)
+        json.dump(cat, open(CATALOGO, 'w', encoding='utf-8'),
+                  ensure_ascii=False, indent=1)
+    _cache.clear()
+    return hubo
 
 
 def preparar(forzar=False, hablar=True):

@@ -63,6 +63,21 @@
         <p class="mini">PNG, JPG o WEBP · hasta 40 MB</p>
       </div>
 
+      <div class="marcador" id="marcador" hidden>
+        <p class="ayuda" id="marcador-msg"></p>
+        <p class="mini">Arrastra un recuadro sobre <b>la boca</b>. El motor la borra y
+           dibuja una nueva en cada fotograma: así se animan los personajes que no
+           tienen labios ni dientes que abrir.</p>
+        <div class="lienzo-marca">
+          <img id="marcador-img" alt="Marca la boca del personaje">
+          <div class="seleccion" id="seleccion" hidden></div>
+        </div>
+        <div class="acciones-marca">
+          <button class="boton principal" id="marcar-ok" aria-disabled="true">Usar esta boca</button>
+          <button class="boton secundario" id="marcar-no">Descartar imagen</button>
+        </div>
+      </div>
+
       <ul class="rejilla" id="lista-avatares" role="list"></ul>
       <p class="vacio" id="vacio-avatares">Todavía no hay ningún avatar medido.</p>
     </section>

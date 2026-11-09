@@ -284,7 +284,12 @@ _cache = {}
 
 def cargar(nombre='base'):
     if nombre not in _cache:
-        _cache[nombre] = Rig(nombre)
+        d = np.load(os.path.join(RIGS, nombre + '.npz'))
+        if str(d.get('tipo', '')) == 'dibujada':
+            import dibujada
+            _cache[nombre] = dibujada.RigDibujado(nombre)
+        else:
+            _cache[nombre] = Rig(nombre)
     return _cache[nombre]
 
 

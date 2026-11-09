@@ -57,10 +57,17 @@ def recortar(ruta):
             if 0 <= ny < h and 0 <= nx < w and fondo[ny, nx] and not bg[ny, nx]:
                 bg[ny, nx] = True; dq.append((ny, nx))
 
+    # Bolsas de fondo que el relleno no alcanza desde el borde: la sombra del
+    # suelo entre las piernas, por ejemplo. Se quitan por color, porque la
+    # sombra es gris neutro y los dientes o los tenis son cálidos.
+    #
+    # El tope de tamaño NO es opcional: sin él esto se come una barba blanca o
+    # un ribete de piel, que también son zonas neutras grandes y encerradas.
     sueltas, n = ndimage.label(fondo & ~bg)
+    tope = 0.02 * (~bg).sum()
     for i in range(1, n + 1):
         m = sueltas == i
-        if m.sum() > 120 and mn[m].mean() > 205 and sat[m].mean() < 12:
+        if 120 < m.sum() < tope and mn[m].mean() > 205 and sat[m].mean() < 12:
             bg |= m
 
     alpha = Image.fromarray(np.where(bg, 0, 255).astype(np.uint8), 'L')
@@ -401,6 +408,45 @@ def _verificacion(rgba, d, destino):
     x0, y0, x1, y1 = d['sujeto']
     alto = y1 - y0
     vis.crop((max(x0 - 10, 0), y0, x1 + 10, y0 + int(alto * 0.45))).save(destino)
+
+
+def medir_dibujada(ruta, nombre, caja, guardar=True):
+    """Prepara un rig de boca dibujada a partir de la caja que marque el usuario.
+
+    No hace falta medir ojos ni dientes: la boca se borra y se dibuja encima,
+    así que lo único imprescindible es saber dónde está.
+    """
+    import dibujada
+    rgba, suj = recortar(ruta)
+    lienzo, contorno, interior, caja = dibujada.analizar(rgba, caja)
+    ys, xs = np.nonzero(suj)
+    datos = dict(tipo='dibujada', boca=np.array(caja),
+                 contorno=np.array(contorno), interior=np.array(interior),
+                 sujeto=np.array([xs.min(), ys.min(), xs.max(), ys.max()]))
+    if guardar:
+        os.makedirs(RIGS, exist_ok=True)
+        lienzo.save(os.path.join(RIGS, nombre + '.png'))
+        np.savez_compressed(os.path.join(RIGS, nombre + '.npz'), **datos)
+        chk = rgba.convert('RGB')
+        dr = ImageDraw.Draw(chk)
+        dr.rectangle(list(caja), outline=(0, 230, 230), width=3)
+        x0, y0, x1, y1 = [int(v) for v in datos['sujeto']]
+        alto = y1 - y0
+        chk.crop((max(x0 - 10, 0), y0, x1 + 10, y0 + int(alto * 0.55))).save(
+            os.path.join(RIGS, nombre + '_check.png'))
+    return datos
+
+
+def borrar(nombre):
+    """Quita el rig medido y la imagen de origen del avatar."""
+    import glob as _g
+    hubo = False
+    for p in (os.path.join(RIGS, nombre + e) for e in ('.npz', '.png', '_check.png')):
+        if os.path.isfile(p):
+            os.remove(p); hubo = True
+    for p in _g.glob(os.path.join(AQUI, 'avatares', nombre + '.*')):
+        os.remove(p); hubo = True
+    return hubo
 
 
 def medir_carpeta(carpeta=None, hablar=True):

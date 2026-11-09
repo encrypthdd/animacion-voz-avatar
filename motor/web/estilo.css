@@ -383,3 +383,19 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:7px}
 .requisitos b{color:var(--texto);font-weight:600}
 .aviso-suave{background:rgba(251,191,36,.08);border-left:2px solid rgba(251,191,36,.5);
   border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:14px;color:#D9C89A}
+
+/* el ojo y la papelera, uno al lado del otro */
+.rejilla li .quitar.ver{right:40px}
+.rejilla li .quitar.borrar:hover{color:var(--mal);border-color:var(--mal)}
+
+/* ---------------------------------------------------------- marcar la boca */
+.marcador{margin-top:16px;padding:16px;border:1px solid var(--borde);
+  border-radius:var(--r-m);background:rgba(124,58,237,.07)}
+.lienzo-marca{position:relative;margin:12px 0;border-radius:var(--r-s);
+  overflow:hidden;background:#17131f;display:inline-block;max-width:100%;
+  cursor:crosshair;touch-action:none}
+.lienzo-marca img{display:block;max-width:100%;max-height:420px;
+  user-select:none;-webkit-user-drag:none}
+.seleccion{position:absolute;border:2px solid var(--rosa);
+  background:rgba(236,72,153,.22);pointer-events:none;border-radius:3px}
+.acciones-marca{display:flex;gap:10px;flex-wrap:wrap}

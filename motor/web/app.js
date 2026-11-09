@@ -51,6 +51,8 @@ function pintarAvatares() {
               title="Ver la medición" aria-label="Ver la medición de ${a.nombre}">
         <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
+      <button class="quitar borrar" type="button"
+              title="Quitar este avatar" aria-label="Quitar ${a.nombre}">${ico.equis}</button>
       ${a.aviso ? `<span class="marca-aviso" title="${a.aviso}">aviso</span>` : ''}
       <div class="pie">
         <span class="nom">${a.nombre}</span>
@@ -58,6 +60,17 @@ function pintarAvatares() {
                 aria-checked="${estado.elegidos.has(a.nombre)}"
                 aria-label="Usar ${a.nombre} como avatar que habla">${ico.check}</button>
       </div>`;
+    li.querySelector('.borrar').onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`¿Quitar "${a.nombre}"? Se borra la medición y la imagen.`)) return;
+      await pedir('/api/avatar/borrar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: a.nombre }),
+      });
+      estado.avatares = estado.avatares.filter((x) => x.nombre !== a.nombre);
+      estado.elegidos.delete(a.nombre);
+      pintarAvatares();
+    };
     const img = li.querySelector('img'), ver = li.querySelector('.ver');
     ver.onclick = () => {
       const viendo = ver.getAttribute('aria-pressed') === 'true';
@@ -98,7 +111,17 @@ function pintarPoses() {
     const li = document.createElement('li');
     li.style.animationDelay = (i * 40) + 'ms';
     li.innerHTML = `<img src="${p.img}" alt="Pose ${p.nombre}">
+      <button class="quitar" type="button" aria-label="Quitar ${p.nombre}">${ico.equis}</button>
       <div class="pie"><span class="nom">${p.nombre}</span></div>`;
+    li.querySelector('.quitar').onclick = async (e) => {
+      e.stopPropagation();
+      await pedir('/api/pose/borrar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: p.nombre }),
+      });
+      estado.poses = estado.poses.filter((x) => x.nombre !== p.nombre);
+      pintarPoses();
+    };
     ul.appendChild(li);
   });
 }
@@ -116,7 +139,9 @@ function conectarSubida(zonaSel, inputSel, url, multiple, alLlegar) {
       zona.querySelector('p strong').textContent = 'Procesando ' + f.name + '…';
       try {
         const r = await (await pedir(url, { method: 'POST', body: fd })).json();
-        if (!r.ok) {
+        if (!r.ok && r.marcar) {
+          pedirMarca(r);
+        } else if (!r.ok) {
           error(r.error || 'No se pudo procesar la imagen.');
         } else {
           alLlegar(r);
@@ -284,6 +309,87 @@ function specFondo() {
   }
   return { tipo: 'degradado', id: f.id };
 }
+
+// ──────────────────────────────────────────────────── marcar la boca a mano
+/* Cuando la medición automática falla, el usuario señala dónde está la boca y
+   se usa el segundo método: borrarla y dibujarla. No hace falta nada más. */
+const marca = { nombre: null, caja: null, arrastrando: false, ini: null };
+
+function pedirMarca(r) {
+  marca.nombre = r.nombre;
+  marca.caja = null;
+  $('#marcador-msg').textContent = r.error || '';
+  $('#marcador-img').src = r.origen;
+  $('#seleccion').hidden = true;
+  $('#marcar-ok').setAttribute('aria-disabled', 'true');
+  $('#marcador').hidden = false;
+  $('#marcador').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cerrarMarca() {
+  $('#marcador').hidden = true;
+  marca.nombre = null; marca.caja = null;
+}
+
+(function conectarMarcador() {
+  const zona = $('.lienzo-marca'), img = $('#marcador-img'), sel = $('#seleccion');
+  if (!zona) return;
+  const punto = (e) => {
+    const r = img.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: Math.min(Math.max(t.clientX - r.left, 0), r.width),
+             y: Math.min(Math.max(t.clientY - r.top, 0), r.height) };
+  };
+  const pintar = (a, b) => {
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    const w = Math.abs(a.x - b.x), h = Math.abs(a.y - b.y);
+    Object.assign(sel.style, { left: x + 'px', top: y + 'px',
+                               width: w + 'px', height: h + 'px' });
+    sel.hidden = false;
+    // de píxeles en pantalla a píxeles de la imagen original
+    const k = img.naturalWidth / img.clientWidth;
+    marca.caja = [x * k, y * k, (x + w) * k, (y + h) * k];
+    const valido = w * k > 8 && h * k > 5;
+    $('#marcar-ok').setAttribute('aria-disabled', String(!valido));
+    return valido;
+  };
+  const abajo = (e) => { e.preventDefault(); marca.arrastrando = true;
+                         marca.ini = punto(e); pintar(marca.ini, marca.ini); };
+  const mover = (e) => { if (marca.arrastrando) { e.preventDefault();
+                         pintar(marca.ini, punto(e)); } };
+  const arriba = () => { marca.arrastrando = false; };
+  zona.addEventListener('mousedown', abajo);
+  zona.addEventListener('touchstart', abajo, { passive: false });
+  window.addEventListener('mousemove', mover);
+  window.addEventListener('touchmove', mover, { passive: false });
+  window.addEventListener('mouseup', arriba);
+  window.addEventListener('touchend', arriba);
+})();
+
+$('#marcar-ok').onclick = async () => {
+  if ($('#marcar-ok').getAttribute('aria-disabled') === 'true') return;
+  try {
+    const r = await (await pedir('/api/avatar/dibujada', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: marca.nombre, caja: marca.caja }),
+    })).json();
+    if (!r.ok) return error(r.error || 'No se pudo preparar la boca.');
+    estado.avatares = estado.avatares.filter((a) => a.nombre !== r.nombre);
+    estado.avatares.push({ nombre: r.nombre, img: r.img, check: r.check, aviso: r.aviso });
+    estado.elegidos.add(r.nombre);
+    cerrarMarca(); pintarAvatares(); error('');
+  } catch (e) { error('Falló al preparar la boca: ' + e.message); }
+};
+
+$('#marcar-no').onclick = async () => {
+  if (marca.nombre) {
+    await pedir('/api/avatar/borrar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: marca.nombre }),
+    }).catch(() => {});
+  }
+  cerrarMarca();
+};
 
 // ───────────────────────────────────────────────────────────── música
 function pintarMusica() {

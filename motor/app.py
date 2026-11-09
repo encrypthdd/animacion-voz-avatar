@@ -133,9 +133,10 @@ def api_avatar():
         d, _ = medir.medir(ruta, nombre)
     except medir.NoMedible as e:
         return jsonify({'ok': False, 'nombre': nombre, 'medible': False,
-                        'error': f'No se pudo medir la cara: {e}. Revisa que el '
-                                 'fondo sea plano, la cara esté de frente y la '
-                                 'boca tenga labios y dientes a la vista.'}), 200
+                        'marcar': True,
+                        'origen': f'/media/avatares/{os.path.basename(ruta)}'
+                                  f'?t={int(time.time())}',
+                        'error': f'No se pudo medir la cara automáticamente: {e}.'}), 200
     except Exception as e:
         return jsonify({'ok': False, 'error': f'No se pudo procesar: {e}'}), 500
     avatar._cache.pop(nombre, None)
@@ -249,6 +250,48 @@ def api_musica():
         aviso = f'La pista dura {dur:.0f} s: se repetirá en bucle y puede cansar.'
     return jsonify({'ok': True, 'nombre': nom, 'dur': dur, 'aviso': aviso,
                     'url': f'/media/musica/{nom}.m4a?t={int(time.time())}'})
+
+
+@app.post('/api/avatar/dibujada')
+def api_avatar_dibujada():
+    """Crea un rig de boca dibujada con la caja que marque el usuario."""
+    d = request.get_json(force=True, silent=True) or {}
+    nombre = limpio(d.get('nombre') or '')
+    import glob as _g
+    orig = _g.glob(os.path.join(AQUI, 'avatares', nombre + '.*'))
+    if not orig:
+        return jsonify({'ok': False, 'error': 'La imagen ya no está. Vuelve a subirla.'}), 404
+    try:
+        caja = [int(round(float(v))) for v in d.get('caja', [])]
+        if len(caja) != 4:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'Marca la boca arrastrando sobre la imagen.'}), 400
+    try:
+        medir.medir_dibujada(orig[0], nombre, caja)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'No se pudo preparar la boca: {e}'}), 400
+    avatar._cache.pop(nombre, None)
+    sello = int(time.time())
+    return jsonify({'ok': True, 'nombre': nombre, 'tipo': 'dibujada',
+                    'aviso': 'Boca dibujada: no parpadea ni mueve las cejas.',
+                    'img': f'/media/rigs/{nombre}.png?t={sello}',
+                    'check': f'/media/rigs/{nombre}_check.png?t={sello}'})
+
+
+@app.post('/api/avatar/borrar')
+def api_avatar_borrar():
+    d = request.get_json(force=True, silent=True) or {}
+    nombre = limpio(d.get('nombre') or '')
+    ok = medir.borrar(nombre)
+    avatar._cache.pop(nombre, None)
+    return jsonify({'ok': ok})
+
+
+@app.post('/api/pose/borrar')
+def api_pose_borrar():
+    d = request.get_json(force=True, silent=True) or {}
+    return jsonify({'ok': poses.borrar(limpio(d.get('nombre') or ''))})
 
 
 @app.post('/api/musica/borrar')
