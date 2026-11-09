@@ -9,7 +9,6 @@ banda de las cejas y barbilla. Deja tambien `rigs/<nombre>_check.png` para
 revisar a ojo: una medida mal tomada se nota en todos los videos.
 """
 import os, sys
-from collections import deque
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy import ndimage
@@ -21,6 +20,10 @@ RIGS = os.path.join(AQUI, 'rigs')
 # Una boca más estrecha que esto respecto a la separación de los ojos no es una
 # boca: es otra cosa que se le parece. Medido: en los personajes que funcionan
 # sale entre 1.7 y 1.9 veces.
+UMBRAL_TINTA = 40.0   # gradiente a partir del cual una linea corta el relleno
+MIN_HONDURA = 0.30    # cuanto debe adentrarse un ojo en la silueta, en separaciones
+MAX_DESNIVEL = 0.25   # desnivel admitido entre los dos ojos
+MIN_CAIDA, MAX_CAIDA = 0.55, 1.60   # distancia de los ojos a la boca
 MIN_BOCA = 0.55
 # Cuánto puede desviarse el centro de la boca del centro de los ojos.
 MAX_DESVIO = 0.35
@@ -40,29 +43,35 @@ def recortar(ruta):
     sat = a.max(axis=2) - mn
     fondo = (mn > 186) & (sat < 22)
 
-    bg = np.zeros((h, w), bool)
-    dq = deque()
-    for x in range(w):
-        for y in (0, h - 1):
-            if fondo[y, x] and not bg[y, x]:
-                bg[y, x] = True; dq.append((y, x))
-    for y in range(h):
-        for x in (0, w - 1):
-            if fondo[y, x] and not bg[y, x]:
-                bg[y, x] = True; dq.append((y, x))
-    while dq:
-        y, x = dq.popleft()
-        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w and fondo[ny, nx] and not bg[ny, nx]:
-                bg[ny, nx] = True; dq.append((ny, nx))
-
-    # Bolsas de fondo que el relleno no alcanza desde el borde: la sombra del
-    # suelo entre las piernas, por ejemplo. Se quitan por color, porque la
-    # sombra es gris neutro y los dientes o los tenis son cálidos.
+    # Barrera de tinta. El fondo se busca desde el borde hacia dentro, pero el
+    # relleno NO cruza una linea dibujada.
     #
-    # El tope de tamaño NO es opcional: sin él esto se come una barba blanca o
-    # un ribete de piel, que también son zonas neutras grandes y encerradas.
+    # Sin esta barrera basta con que el personaje toque el fondo en un punto del
+    # mismo color para perderlo entero: en el sticker de Papa Noel, la piel
+    # blanca del gorro roza la pared clara del agujero, el relleno entra por ahi
+    # y se lleva el gorro, el pompon y el filo de la barba. Con ella, el relleno
+    # se para en el contorno del dibujo, que es justo donde acaba el personaje.
+    lum = a.mean(axis=2).astype(np.float32)
+    g = np.hypot(ndimage.sobel(lum, 0), ndimage.sobel(lum, 1))
+    pasable = fondo & (g <= UMBRAL_TINTA)
+
+    # Es fondo lo que esta conectado con el borde de la imagen.
+    et, n = ndimage.label(pasable)
+    borde = np.concatenate([et[0], et[-1], et[:, 0], et[:, -1]])
+    vivos = [i for i in np.unique(borde) if i]
+    bg = np.isin(et, vivos) if vivos else np.zeros((h, w), bool)
+
+    # La barrera deja sin quitar el filo antialiado, que es fondo con gradiente
+    # alto. Dos pasos de crecimiento lo recuperan sin volver a entrar.
+    for _ in range(2):
+        bg |= ndimage.binary_dilation(bg) & fondo
+
+    # Bolsas de fondo que no tocan el borde: la sombra del suelo entre las
+    # piernas, por ejemplo. Se quitan por color, porque la sombra es gris neutro
+    # y los dientes o los tenis son calidos.
+    #
+    # El tope de tamano NO es opcional: sin el esto se come una barba blanca o
+    # un ribete de piel, que tambien son zonas neutras grandes y encerradas.
     sueltas, n = ndimage.label(fondo & ~bg)
     tope = 0.02 * (~bg).sum()
     for i in range(1, n + 1):
@@ -349,9 +358,29 @@ def medir(ruta, nombre=None, guardar=True):
     # Detección conjunta: lo que valida una pareja de ojos es que haya una boca
     # creíble debajo. Con la pareja suelta se colaban la cinta de la frente de
     # un personaje o una púa del pelo, y salía un rig con medidas absurdas.
+    # Un ojo de verdad esta DENTRO de la cara. Las dos trampas tipicas -el hueco
+    # blanco entre dos puas del pelo de un personaje de anime, o un reflejo
+    # pegado al contorno- tocan el borde de la silueta, asi que basta con medir
+    # cuanto se adentra cada supuesto ojo.
+    hondo = ndimage.distance_transform_edt(suj)
+
     ultimo = None
     for izq, der in candidatos_ojos(a, suj)[:8]:
         sep = abs(der['cx'] - izq['cx'])
+        dentro = min(hondo[int(izq['cy']), int(izq['cx'])],
+                     hondo[int(der['cy']), int(der['cx'])]) / sep
+        if dentro < MIN_HONDURA:
+            ultimo = NoMedible(
+                f'lo detectado como ojo roza el borde de la figura (se adentra '
+                f'{dentro:.2f} veces la separacion y hace falta {MIN_HONDURA}): '
+                'no es un ojo')
+            continue
+        desnivel = abs(izq['cy'] - der['cy']) / sep
+        if desnivel > MAX_DESNIVEL:
+            ultimo = NoMedible(
+                f'los dos ojos quedan a alturas muy distintas ({desnivel:.2f} veces '
+                'su separacion): no son los dos ojos de una misma cara')
+            continue
         try:
             x0, x1, line, top = detectar_boca(a, suj, izq, der)
         except NoMedible as e:
@@ -369,6 +398,12 @@ def medir(ruta, nombre=None, guardar=True):
             ultimo = NoMedible(
                 f'la boca queda descentrada respecto a los ojos ({desvio:.2f} veces '
                 'su separación): lo detectado como ojos no lo es')
+            continue
+        caida = (float(np.mean(line)) - (izq['cy'] + der['cy']) / 2) / sep
+        if not (MIN_CAIDA <= caida <= MAX_CAIDA):
+            ultimo = NoMedible(
+                f'la boca cae a {caida:.2f} veces la separacion de los ojos, fuera '
+                f'de lo que mide una cara ({MIN_CAIDA} a {MAX_CAIDA})')
             continue
         break
     else:

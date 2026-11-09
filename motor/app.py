@@ -57,18 +57,36 @@ def voces():
     return _voces
 
 
-def estado_avatares():
-    rigs = []
-    for n in avatar.disponibles():
+def ficha_rig(n):
+    """Resumen de un rig para la interfaz.
+
+    Los dos métodos guardan medidas distintas, así que hay que preguntar de qué
+    tipo es antes de leer nada. Y si un .npz está a medias, ese avatar sale con
+    un aviso en vez de tumbar la pantalla entera.
+    """
+    ficha = {'nombre': n, 'img': f'/media/rigs/{n}.png',
+             'check': f'/media/rigs/{n}_check.png', 'aviso': '',
+             'tipo': 'destapada', 'diente': 0.0}
+    try:
         d = np.load(os.path.join(avatar.RIGS, n + '.npz'))
-        alt = d['mouth_line'] - d['mouth_top']
-        diente = float(alt[len(alt) // 2]); sep = float(d['eye_sep'])
-        aviso = ''
-        if diente < 0.05 * sep:
-            aviso = 'Poco diente visible: el cierre de labios en M, B y P será flojo.'
-        rigs.append({'nombre': n, 'img': f'/media/rigs/{n}.png',
-                     'check': f'/media/rigs/{n}_check.png', 'aviso': aviso,
-                     'diente': round(diente, 1)})
+        ficha['tipo'] = str(d.get('tipo', '')) or 'destapada'
+        if ficha['tipo'] == 'dibujada':
+            ficha['aviso'] = ('Boca dibujada: habla bien, pero este método no '
+                              'parpadea ni mueve las cejas.')
+        else:
+            alt = d['mouth_line'] - d['mouth_top']
+            diente = float(alt[len(alt) // 2])
+            ficha['diente'] = round(diente, 1)
+            if diente < 0.05 * float(d['eye_sep']):
+                ficha['aviso'] = ('Poco diente visible: el cierre de labios en '
+                                  'M, B y P será flojo.')
+    except (OSError, ValueError, KeyError, IndexError) as e:
+        ficha['aviso'] = f'Medidas incompletas ({e}). Vuelve a subir la imagen.'
+    return ficha
+
+
+def estado_avatares():
+    rigs = [ficha_rig(n) for n in avatar.disponibles()]
     recursos = [{'nombre': n, 'img': f'/media/poses/{n}.png'}
                 for n in sorted(poses.cargar())]
     return rigs, recursos
