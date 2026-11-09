@@ -84,6 +84,13 @@
       </button>
       <span id="reloj" class="reloj">0:00.0 / 0:00.0</span>
       <div class="separa"></div>
+      <button id="btn-deshacer" class="icono" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
+        <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-5"/></svg>
+      </button>
+      <button id="btn-rehacer" class="icono" title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer" disabled>
+        <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h5"/></svg>
+      </button>
+      <div class="separa"></div>
       <button id="btn-cortar" class="icono" title="Partir en el cabezal (S)" aria-label="Partir el clip">
         <svg viewBox="0 0 24 24"><path d="M6 4v9a3 3 0 1 0 0 6"/><path d="M18 4v9a3 3 0 1 1 0 6"/><path d="M6 10h12"/></svg>
       </button>
@@ -165,6 +172,7 @@
   <video id="exp-video" class="video-resultado" controls playsinline hidden></video>
   <div class="pie-dialogo">
     <a id="exp-descarga" class="boton" hidden download>Descargar</a>
+    <button id="exp-cancelar" class="boton secundario" hidden>Cancelar</button>
     <button id="exp-lanzar" class="boton">Exportar ahora</button>
     <button id="exp-cerrar" class="boton secundario">Cerrar</button>
   </div>

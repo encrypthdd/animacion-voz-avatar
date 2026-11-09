@@ -69,6 +69,7 @@ function nuevoMontaje() {
   $('#forma-lienzo').value = 'vertical';
   ajustarLienzo();
   pintarTodo();
+  arrancarHistoria();
 }
 
 async function abrirMontaje(id) {
@@ -83,18 +84,92 @@ async function abrirMontaje(id) {
     $('#forma-lienzo').value = E.montaje.lienzo.forma || 'vertical';
     ajustarLienzo();
     pintarTodo();
+    arrancarHistoria();
   } catch (e) {
     error('No se pudo abrir ese montaje.');
   }
 }
 
+/* ═════════════════════════════════════════════════════ deshacer y rehacer
+ *
+ * La historia guarda el montaje entero en cada paso, no la diferencia. Con
+ * clips que son objetos de diez campos, un montaje completo ocupa unos pocos
+ * kilobytes; guardar diferencias seria mas fino y mucho mas facil de
+ * equivocar, y un deshacer que a veces restaura mal es peor que no tenerlo.
+ *
+ * Dos pasos con la MISMA etiqueta y muy seguidos se funden en uno: arrastrar
+ * el mando de velocidad lanza decenas de cambios, y deshacerlos de uno en uno
+ * seria inservible. Por eso las acciones sueltas -anadir, partir, borrar,
+ * duplicar- llevan etiqueta unica: dos clips soltados seguidos tienen que ser
+ * dos pasos, no uno.
+ */
+const H = { pila: [], i: -1, etiqueta: '', ultima: 0 };
+const TOPE_HISTORIA = 80;
+const SALTO_GORDO = 0.5;  // s de desfase a partir del cual el medio salta
+const FUSION = 700;      // ms dentro de los cuales dos pasos iguales son uno
+
+function instantanea() {
+  return JSON.stringify({
+    nombre: E.montaje.nombre, lienzo: E.montaje.lienzo,
+    pistas: E.montaje.pistas, clips: E.montaje.clips,
+  });
+}
+
+function arrancarHistoria() {
+  H.pila = [instantanea()]; H.i = 0; H.etiqueta = ''; H.ultima = 0;
+  botonesHistoria();
+}
+
+function anotar(etiqueta) {
+  const estado = instantanea();
+  if (H.pila[H.i] === estado) return;
+  const ahora = performance.now();
+  if (etiqueta && etiqueta === H.etiqueta && ahora - H.ultima < FUSION) {
+    H.pila[H.i] = estado;
+    H.ultima = ahora;
+    return;
+  }
+  H.etiqueta = etiqueta || ''; H.ultima = ahora;
+  H.pila.length = H.i + 1;
+  H.pila.push(estado);
+  if (H.pila.length > TOPE_HISTORIA) H.pila.shift();
+  H.i = H.pila.length - 1;
+  botonesHistoria();
+}
+
+function botonesHistoria() {
+  const a = $('#btn-deshacer'), b = $('#btn-rehacer');
+  if (a) a.disabled = H.i <= 0;
+  if (b) b.disabled = H.i >= H.pila.length - 1;
+}
+
+function viajar(paso) {
+  const destino = H.i + paso;
+  if (destino < 0 || destino >= H.pila.length) return;
+  H.i = destino;
+  H.etiqueta = '';
+  Object.assign(E.montaje, JSON.parse(H.pila[H.i]));
+  if (!clip(E.elegido)) E.elegido = null;
+  $('#nombre-montaje').value = E.montaje.nombre;
+  $('#forma-lienzo').value = E.montaje.lienzo.forma || 'vertical';
+  ajustarLienzo();
+  pintarTodo();
+  botonesHistoria();
+  marcarSucio();
+}
+
 /* ═════════════════════════════════════════════════════════ guardado */
-function cambiado({ repintar = true } = {}) {
+function marcarSucio() {
   E.sucio = true;
-  if (repintar) pintarTiempo();
   $('#estado-guardado').textContent = 'sin guardar';
   clearTimeout(E.guardando);
   E.guardando = setTimeout(guardar, 900);
+}
+
+function cambiado({ repintar = true, paso = '' } = {}) {
+  anotar(paso);
+  if (repintar) pintarTiempo();
+  marcarSucio();
 }
 
 async function guardar() {
@@ -159,6 +234,8 @@ async function quitarMedio(m) {
   }).catch(() => {});
   E.medios.delete(m.id);
   E.montaje.clips = E.montaje.clips.filter((c) => c.medio !== m.id);
+  const viejo = reproductores.get(m.id);
+  if (viejo && viejo.remove) { viejo.pause(); viejo.remove(); }
   reproductores.delete(m.id);
   pintarMedios(); cambiado();
 }
@@ -213,10 +290,43 @@ function anadirClip(medioId, pistaId, t) {
     entrada: 0, veloc: 1, volumen: 1, opacidad: 1, encaje: 'cubrir',
     nombre: m.nombre,
   };
+  c.t = acomodar(c, c.t);
   E.montaje.clips.push(c);
   E.elegido = c.id;
-  cambiado();
+  cambiado({ paso: 'anadir' + c.id });
   return c;
+}
+
+function choca(c, t, dur) {
+  /* El primer clip de la misma pista al que pisaria. */
+  return E.montaje.clips.find((o) => o.id !== c.id && o.pista === c.pista &&
+    t < o.t + o.dur - 1e-4 && t + dur > o.t + 1e-4) || null;
+}
+
+function acomodar(c, t) {
+  /* Dos clips de la misma pista no pueden sonar a la vez: la pista es una
+     sola, y si se pisan hay que inventarse cual gana. En vez de eso, el clip
+     se desplaza al hueco libre mas cercano. */
+  let p = Math.max(t, 0);
+  for (let k = 0; k < 40; k++) {
+    const o = choca(c, p, c.dur);
+    if (!o) return p;
+    const izq = o.t - c.dur, der = o.t + o.dur;
+    p = (izq >= 0 && Math.abs(p - izq) <= Math.abs(p - der)) ? izq : der;
+  }
+  return p;
+}
+
+function vecinoDerecha(c) {
+  return E.montaje.clips
+    .filter((o) => o.id !== c.id && o.pista === c.pista && o.t >= c.t + 1e-4)
+    .reduce((m, o) => (m === null || o.t < m.t ? o : m), null);
+}
+
+function vecinoIzquierda(c) {
+  return E.montaje.clips
+    .filter((o) => o.id !== c.id && o.pista === c.pista && o.t + o.dur <= c.t + c.dur + 1e-4)
+    .reduce((m, o) => (m === null || o.t + o.dur > m.t + m.dur ? o : m), null);
 }
 
 function topeClip(c) {
@@ -238,23 +348,24 @@ function partir() {
   c.dur = corte;
   E.montaje.clips.push(b);
   E.elegido = b.id;
-  error(''); cambiado();
+  error(''); cambiado({ paso: 'partir' + b.id });
 }
 
 function borrarClip() {
   if (!E.elegido) return;
   E.montaje.clips = E.montaje.clips.filter((c) => c.id !== E.elegido);
   E.elegido = null;
-  cambiado();
+  cambiado({ paso: 'borrar' + nuevoId() });
 }
 
 function duplicar() {
   const c = clip(E.elegido);
   if (!c) return;
   const b = { ...c, id: nuevoId(), t: c.t + c.dur };
+  b.t = acomodar(b, b.t);
   E.montaje.clips.push(b);
   E.elegido = b.id;
-  cambiado();
+  cambiado({ paso: 'duplicar' + b.id });
 }
 
 /* ═════════════════════════════════════════════════════ dibujo del tiempo */
@@ -276,8 +387,8 @@ function pintarPistas() {
         <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
       <button class="son" aria-pressed="${p.muda}" title="Silenciar">
         <svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button>`;
-    n.querySelector('.ojo').onclick = () => { p.oculta = !p.oculta; pintarPistas(); cambiado(); };
-    n.querySelector('.son').onclick = () => { p.muda = !p.muda; pintarPistas(); cambiado(); };
+    n.querySelector('.ojo').onclick = () => { p.oculta = !p.oculta; pintarPistas(); cambiado({ paso: 'ver' + p.id }); };
+    n.querySelector('.son').onclick = () => { p.muda = !p.muda; pintarPistas(); cambiado({ paso: 'son' + p.id }); };
     cont.appendChild(n);
 
     const d = document.createElement('div');
@@ -397,6 +508,22 @@ function pintarInspector() {
 /* ═════════════════════════════════════════════ vista previa en canvas */
 const reproductores = new Map();
 
+function corral() {
+  /* Los <video> y <audio> de la vista previa tienen que estar DENTRO del
+     documento. Sueltos en memoria se pueden dibujar, pero el navegador no
+     garantiza que suenen, y aqui el sonido es la mitad del montaje. Se
+     esconden en un rincon de 2 px: con display:none algunos navegadores ni
+     descodifican. */
+  let c = $('#reproductores');
+  if (!c) {
+    c = document.createElement('div');
+    c.id = 'reproductores';
+    c.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(c);
+  }
+  return c;
+}
+
 function reproductor(m) {
   if (reproductores.has(m.id)) return reproductores.get(m.id);
   let el;
@@ -409,6 +536,8 @@ function reproductor(m) {
     el.preload = 'auto';
     el.playsInline = true;
     el.muted = false;
+    el.dataset.medio = m.id;
+    corral().appendChild(el);
   }
   reproductores.set(m.id, el);
   return el;
@@ -416,9 +545,12 @@ function reproductor(m) {
 
 function activos(t) {
   const porPista = new Map(E.montaje.pistas.map((p, i) => [p.id, i]));
+  // Mismo orden que usa exportar.py al superponer: primero la pista de abajo
+  // y, dentro de una pista, el que empieza antes. Si los dos modelos ordenan
+  // distinto, la vista previa ensena una cosa y el MP4 sale con otra.
   return E.montaje.clips
     .filter((c) => t >= c.t && t < c.t + c.dur)
-    .sort((a, b) => porPista.get(b.pista) - porPista.get(a.pista));  // abajo primero
+    .sort((a, b) => (porPista.get(b.pista) - porPista.get(a.pista)) || (a.t - b.t));
 }
 
 function ajustarLienzo() {
@@ -455,6 +587,7 @@ function dibujar() {
   g.fillStyle = '#000';
   g.fillRect(0, 0, cv.width, cv.height);
   const vistos = new Set();
+  let maestro = true;   // el primer medio de la tanda manda en el reloj
 
   for (const c of activos(E.t)) {
     const m = E.medios.get(c.medio);
@@ -470,12 +603,24 @@ function dibujar() {
       el.muted = !suena;
       el.playbackRate = Math.min(Math.max(c.veloc, 0.25), 4);
       if (E.reproduciendo) {
-        if (Math.abs(el.currentTime - st) > 0.3) el.currentTime = st;
         if (el.paused) el.play().catch(() => {});
+        const desfase = el.currentTime - st;
+        if (Math.abs(desfase) > SALTO_GORDO) {
+          // de verdad esta en otro sitio (se movio el cabezal): saltar
+          el.currentTime = st;
+        } else if (maestro && !el.paused && el.readyState >= 2 &&
+                   Math.abs(desfase) > 0.02 && E.ancla) {
+          /* Desfase pequeno. Forzar el medio cada fotograma le haria dar
+             saltitos, porque un <video> tarda en posicionarse. Se mueve el
+             RELOJ hacia el medio, poco a poco: el cabezal acaba marcando lo
+             que de verdad se esta viendo y oyendo. */
+          E.ancla.reloj -= desfase * 1000 * 0.25;
+        }
       } else {
         if (!el.paused) el.pause();
         if (Math.abs(el.currentTime - st) > 0.04) el.currentTime = st;
       }
+      maestro = false;
     }
     if (m.tipo === 'audio' || (pista && pista.oculta)) continue;
 
@@ -591,9 +736,13 @@ function conectarArrastre() {
           }
         }
       } else if (modo === 'der') {
-        c.dur = Math.max(Math.min(pegar(ini.t + ini.dur + d, c.id) - c.t, topeClip(c)), 0.08);
+        const der = vecinoDerecha(c);
+        const tope = Math.min(topeClip(c), der ? der.t - c.t : Infinity);
+        c.dur = Math.max(Math.min(pegar(ini.t + ini.dur + d, c.id) - c.t, tope), 0.08);
       } else {
-        const nt = Math.max(pegar(ini.t + d, c.id), 0);
+        const izq = vecinoIzquierda(c);
+        const suelo = izq ? izq.t + izq.dur : 0;
+        const nt = Math.max(pegar(ini.t + d, c.id), suelo);
         const corrido = nt - ini.t;
         const nuevaEntrada = ini.entrada + corrido * c.veloc;
         if (nuevaEntrada < 0) return;
@@ -613,9 +762,9 @@ function conectarArrastre() {
       el.releasePointerCapture(ev.pointerId);
       el.removeEventListener('pointermove', mover);
       el.removeEventListener('pointerup', soltar);
-      c.t = Math.round(c.t * 1000) / 1000;
       c.dur = Math.round(c.dur * 1000) / 1000;
-      cambiado();
+      c.t = Math.round(acomodar(c, c.t) * 1000) / 1000;
+      cambiado({ paso: 'mover' + c.id });
       pintarInspector();
     };
     el.addEventListener('pointermove', mover);
@@ -675,6 +824,7 @@ async function exportar() {
   $('#exp-barra').hidden = true;
   $('#exp-video').hidden = true;
   $('#exp-descarga').hidden = true;
+  $('#exp-cancelar').hidden = true;
   $('#exp-estado').textContent = '';
   $('#exp-lanzar').disabled = E.montaje.clips.length === 0;
   dlg.showModal();
@@ -685,6 +835,7 @@ async function lanzarExportacion() {
   await guardar();
   $('#exp-lanzar').disabled = true;
   $('#exp-barra').hidden = false;
+  $('#exp-cancelar').hidden = false;
   $('#exp-estado').textContent = 'Preparando…';
   let tid;
   try {
@@ -698,8 +849,13 @@ async function lanzarExportacion() {
   } catch (e) {
     $('#exp-estado').textContent = e.message;
     $('#exp-lanzar').disabled = false;
+    $('#exp-cancelar').hidden = true;
     return;
   }
+  $('#exp-cancelar').onclick = () => {
+    $('#exp-estado').textContent = 'Cancelando…';
+    pedir('/api/exportacion/' + tid + '/cancelar', { method: 'POST' }).catch(() => {});
+  };
   const tic = setInterval(async () => {
     let d;
     try { d = await (await pedir('/api/exportacion/' + tid)).json(); } catch { return; }
@@ -707,11 +863,13 @@ async function lanzarExportacion() {
     $('#exp-estado').textContent = d.mensaje || '';
     if (d.estado === 'listo') {
       clearInterval(tic);
+      $('#exp-cancelar').hidden = true;
       $('#exp-video').src = d.video; $('#exp-video').hidden = false;
       $('#exp-descarga').href = d.descarga; $('#exp-descarga').hidden = false;
       $('#exp-lanzar').disabled = false;
     } else if (d.estado === 'error') {
       clearInterval(tic);
+      $('#exp-cancelar').hidden = true;
       $('#exp-lanzar').disabled = false;
     }
   }, 900);
@@ -778,16 +936,19 @@ function conectar() {
     const vs = E.montaje.pistas.filter((p) => p.tipo === 'video').length;
     E.montaje.pistas.unshift({ id: 'v' + (vs + 1) + nuevoId().slice(0, 3),
       tipo: 'video', nombre: `Vídeo ${vs + 1}`, muda: false, oculta: false });
-    pintarPistas(); cambiado();
+    pintarPistas(); cambiado({ paso: 'pista' + nuevoId() });
   };
 
-  $('#nombre-montaje').oninput = () => cambiado({ repintar: false });
+  $('#nombre-montaje').oninput = () => {
+    E.montaje.nombre = $('#nombre-montaje').value.trim() || 'Montaje';
+    cambiado({ repintar: false, paso: 'nombre' });
+  };
   $('#forma-lienzo').onchange = (e) => {
     const f = { vertical: [1080, 1920], horizontal: [1920, 1080],
                 cuadrado: [1080, 1080], clasico: [1440, 1080] }[e.target.value];
     E.montaje.lienzo = { w: f[0], h: f[1], fps: E.montaje.lienzo.fps || 30,
                          forma: e.target.value };
-    ajustarLienzo(); cambiado({ repintar: false });
+    ajustarLienzo(); cambiado({ repintar: false, paso: 'lienzo' });
   };
 
   const prop = (sel, campo, fmt) => {
@@ -795,13 +956,18 @@ function conectar() {
       const c = clip(E.elegido);
       if (!c) return;
       c[campo] = campo === 'encaje' ? $(sel).value : +$(sel).value;
-      if (campo === 'veloc') c.dur = Math.min(c.dur, topeClip(c));
-      pintarInspector(); cambiado();
+      if (campo === 'veloc') {
+        const der = vecinoDerecha(c);
+        c.dur = Math.min(c.dur, topeClip(c), der ? der.t - c.t : Infinity);
+      }
+      pintarInspector(); cambiado({ paso: campo + c.id });
     };
   };
   prop('#p-veloc', 'veloc'); prop('#p-volumen', 'volumen');
   prop('#p-opacidad', 'opacidad'); prop('#p-encaje', 'encaje');
 
+  $('#btn-deshacer').onclick = () => viajar(-1);
+  $('#btn-rehacer').onclick = () => viajar(1);
   $('#btn-exportar').onclick = exportar;
   $('#exp-lanzar').onclick = lanzarExportacion;
   $('#exp-cerrar').onclick = () => $('#dlg-exportar').close();
@@ -817,6 +983,13 @@ function conectar() {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     if (document.querySelector('dialog[open]')) return;
     const salto = e.shiftKey ? 1 : 1 / 30;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault(); viajar(e.shiftKey ? 1 : -1); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault(); viajar(1); return;
+    }
+    if (e.ctrlKey || e.metaKey) return;
     if (e.code === 'Space') { e.preventDefault(); E.reproduciendo ? pausar() : tocar(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); irA(E.t + salto); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); irA(E.t - salto); }

@@ -52,7 +52,17 @@ def _atempo(veloc):
 
 
 def construir(p, destino, calidad='alta'):
-    """Devuelve (comando, duracion). No ejecuta nada."""
+    """Devuelve (comando, duracion, grafo, carpeta). No ejecuta nada.
+
+    El grafo de filtros NO va en el comando: se devuelve aparte para
+    escribirlo en un archivo. Y los archivos de entrada se nombran relativos a
+    `medios/orig`, por lo que FFmpeg se lanza desde ahi.
+
+    Las dos cosas son por el mismo motivo. Windows corta la linea de comandos
+    en 32767 caracteres, y un montaje de 81 clips ya la pasaba: el grafo solo
+    son ~300 caracteres por clip, y cada ruta absoluta, otros 90. Con el grafo
+    en un archivo y nombres de 16 caracteres caben los 400 clips del tope.
+    """
     cat = {m['id']: m for m in medios.listar()}
     p = montaje.limpiar(p, cat)
     clips = p['clips']
@@ -83,12 +93,13 @@ def construir(p, destino, calidad='alta'):
         ruta = medios.ruta(c['medio'])
         if not ruta:
             continue
+        corto = os.path.basename(ruta)        # se lanza desde medios/orig
         indice[c['id']] = len(ent)
         if cat[c['medio']]['tipo'] == 'imagen':
-            ent.append(['-loop', '1', '-t', f'{c["dur"]:.3f}', '-i', ruta])
+            ent.append(['-loop', '1', '-t', f'{c["dur"]:.3f}', '-i', corto])
         else:
             ent.append(['-ss', f'{c["entrada"]:.3f}',
-                        '-t', f'{c["dur"] * c["veloc"]:.3f}', '-i', ruta])
+                        '-t', f'{c["dur"] * c["veloc"]:.3f}', '-i', corto])
 
     for c in visibles:
         i = indice.get(c['id'])
@@ -143,34 +154,54 @@ def construir(p, destino, calidad='alta'):
         filtros.append(f'anullsrc=r=48000:cl=stereo,atrim=0:{total:.3f}[aout]')
 
     crf, preset = ('18', 'slow') if calidad == 'alta' else ('23', 'veryfast')
-    cmd = [entorno.ffmpeg(), '-y', '-v', 'error', '-stats_period', '0.5']
+    cmd = [entorno.ffmpeg(), '-y', '-v', 'error']
     for e in ent:
         cmd += e
-    cmd += ['-filter_complex', ';'.join(filtros),
-            '-map', '[vout]', '-map', '[aout]',
+    cmd += ['-map', '[vout]', '-map', '[aout]',
             '-c:v', 'libx264', '-preset', preset, '-crf', crf,
             '-pix_fmt', 'yuv420p', '-r', str(FPS),
             '-c:a', 'aac', '-b:a', '192k',
-            '-t', f'{total:.3f}', '-movflags', '+faststart', destino]
-    return cmd, total
+            '-t', f'{total:.3f}', '-movflags', '+faststart',
+            os.path.abspath(destino)]
+    # un filtro por linea: si FFmpeg se queja, el archivo se puede leer
+    grafo = (';' + os.linesep).join(filtros)
+    return cmd, total, grafo, os.path.join(medios.BASE, 'orig')
 
 
-def exportar(p, destino, calidad='alta', avisar=None, cancelar=None):
-    """Lanza FFmpeg y va informando del avance en tanto por ciento."""
-    cmd, total = construir(p, destino, calidad)
-    os.makedirs(os.path.dirname(destino) or '.', exist_ok=True)
+# Cómo se le pasa a FFmpeg un grafo guardado en un archivo. Cambió: hasta la 6
+# era `-filter_complex_script fichero`, y de la 7 en adelante esa opción no
+# existe y se usa `-/filter_complex fichero`, la forma general de leer el valor
+# de cualquier opción desde un archivo. En vez de adivinar la versión por el
+# texto de `-version` —que viene de mil formas según quién compile— se prueba
+# la primera y, si FFmpeg dice que no la conoce, se usa la otra y se recuerda.
+GRAFO_NUEVO, GRAFO_VIEJO = '-/filter_complex', '-filter_complex_script'
+_flag_grafo = None
+
+
+def _desconocida(stderr):
+    return ('Unrecognized option' in stderr or 'Option not found' in stderr)
+
+
+def _con_grafo(cmd, flag, ruta_grafo):
+    i = cmd.index('-map')
+    return cmd[:i] + [flag, ruta_grafo] + cmd[i:]
+
+
+def _correr(cmd, carpeta, total, avisar, cancelar):
     pr = subprocess.Popen(cmd + ['-progress', 'pipe:1', '-nostats'],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          text=True, bufsize=1)
+                          cwd=carpeta, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, bufsize=1)
     errores = []
     hilo = threading.Thread(target=lambda: errores.append(pr.stderr.read()),
                             daemon=True)
     hilo.start()
+    parado = False
     try:
         for linea in pr.stdout:
             if cancelar and cancelar():
+                parado = True
                 pr.kill()
-                raise RuntimeError('Exportación cancelada.')
+                break
             if linea.startswith('out_time_ms=') and avisar and total > 0:
                 try:
                     seg = int(linea.split('=')[1]) / 1e6
@@ -180,8 +211,33 @@ def exportar(p, destino, calidad='alta', avisar=None, cancelar=None):
     finally:
         pr.wait()
         hilo.join(timeout=2)
+    if parado:
+        raise RuntimeError('Exportación cancelada.')
+    return pr.returncode, (errores[0] if errores else '') or ''
 
-    if pr.returncode != 0:
-        detalle = (errores[0] if errores else '') or ''
-        raise RuntimeError('FFmpeg falló al exportar.\n' + detalle.strip()[-600:])
-    return destino, total
+
+def exportar(p, destino, calidad='alta', avisar=None, cancelar=None):
+    """Lanza FFmpeg y va informando del avance en tanto por ciento."""
+    global _flag_grafo
+    cmd, total, grafo, carpeta = construir(p, destino, calidad)
+    os.makedirs(os.path.dirname(os.path.abspath(destino)) or '.', exist_ok=True)
+    grafo_ruta = os.path.abspath(destino) + '.filtros.txt'
+    with open(grafo_ruta, 'w', encoding='utf-8') as f:
+        f.write(grafo)
+
+    intentos = [_flag_grafo] if _flag_grafo else [GRAFO_NUEVO, GRAFO_VIEJO]
+    try:
+        for n, flag in enumerate(intentos):
+            rc, err = _correr(_con_grafo(cmd, flag, grafo_ruta), carpeta,
+                              total, avisar, cancelar)
+            if rc == 0:
+                _flag_grafo = flag
+                return destino, total
+            if _desconocida(err) and n + 1 < len(intentos):
+                continue
+            raise RuntimeError('FFmpeg falló al exportar.\n' + err.strip()[-600:])
+    finally:
+        try:
+            os.remove(grafo_ruta)
+        except OSError:
+            pass

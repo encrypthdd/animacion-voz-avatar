@@ -221,3 +221,8 @@
   .cuerpo-editor{height:auto; min-height:100vh; overflow:visible}
   .tiempo{height:300px}
 }
+
+/* Los reproductores de la vista previa: han de estar en el documento para que
+   suenen, pero no se ven. */
+#reproductores{position:fixed; left:-9999px; top:0; width:2px; height:2px;
+  overflow:hidden; pointer-events:none}

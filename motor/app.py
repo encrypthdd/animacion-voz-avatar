@@ -731,7 +731,11 @@ def api_exportar():
     destino = os.path.join(MONTAJES, tid + '.mp4')
     with _lock:
         TRABAJOS[tid] = {'estado': 'cola', 'pct': 0, 'mensaje': 'En cola…',
-                         'archivo': destino, 'dur': dur}
+                         'archivo': destino, 'dur': dur, 'cancelar': False}
+
+    def parar():
+        with _lock:
+            return bool(TRABAJOS.get(tid, {}).get('cancelar'))
 
     def faena():
         def avance(f):
@@ -745,7 +749,7 @@ def api_exportar():
                                              'Espera a que acabe.')
             return
         try:
-            exportar.exportar(p, destino, calidad, avisar=avance)
+            exportar.exportar(p, destino, calidad, avisar=avance, cancelar=parar)
             with _lock:
                 TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo')
         except Exception as e:
@@ -770,6 +774,18 @@ def api_exportacion(tid):
         r['video'] = f'/montaje/{tid}.mp4'
         r['descarga'] = f'/montaje/{tid}.mp4?descargar=1'
     return jsonify(r)
+
+
+@app.post('/api/exportacion/<tid>/cancelar')
+def api_exportacion_cancelar(tid):
+    with _lock:
+        t = TRABAJOS.get(tid)
+        if not t:
+            abort(404)
+        if t['estado'] in ('cola', 'trabajando'):
+            t['cancelar'] = True
+            t['mensaje'] = 'Cancelando…'
+    return jsonify({'ok': True})
 
 
 @app.get('/montaje/<tid>.mp4')
