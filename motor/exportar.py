@@ -39,6 +39,42 @@ def _encaje(modo, W, H):
             f'crop={W}:{H}')
 
 
+def _fx(fx, W):
+    """Los ajustes de color, en el mismo orden en que los aplica el navegador.
+
+    El orden no es un detalle: subir el brillo y luego el contraste no da lo
+    mismo que al reves. La vista previa encadena los filtros de canvas en este
+    orden, asi que aqui tienen que ir igual.
+
+    Cada pareja hace la misma cuenta que su equivalente de CSS:
+      brightness(k)   multiplica los tres canales  -> colorchannelmixer
+      contrast(k)     separa del gris medio        -> eq=contrast
+      saturate(k)     separa del gris              -> eq=saturation
+      hue-rotate(g)   gira el tono                 -> hue=h
+      blur(n px)      gaussiana de radio n         -> gblur=sigma
+    """
+    fx = fx or {}
+    cad = []
+    b = float(fx.get('brillo', 1))
+    if abs(b - 1) > 1e-3:
+        cad.append(f'colorchannelmixer=rr={b:.4f}:gg={b:.4f}:bb={b:.4f}')
+    c = float(fx.get('contraste', 1))
+    if abs(c - 1) > 1e-3:
+        cad.append(f'eq=contrast={c:.4f}')
+    sa = float(fx.get('saturacion', 1))
+    if abs(sa - 1) > 1e-3:
+        cad.append(f'eq=saturation={sa:.4f}')
+    t = float(fx.get('tono', 0))
+    if abs(t) > 0.5:
+        cad.append(f'hue=h={t:.2f}')
+    d = float(fx.get('desenfoque', 0))
+    if d > 1e-4:
+        # el desenfoque se guarda en anchos de lienzo, para que se vea igual
+        # en la vista previa pequena y en el video a tamano completo
+        cad.append(f'gblur=sigma={max(d * W, 0.3):.3f}')
+    return cad
+
+
 def _atempo(veloc):
     """atempo solo admite de 0.5 a 2.0, así que para el resto se encadena."""
     v = max(min(float(veloc), 4.0), 0.25)
@@ -160,12 +196,24 @@ def construir(p, destino, calidad='alta', rotulos=None, trabajo=None):
         if i is None:
             continue
         cad = [_encaje(c['encaje'], W, H), 'setsar=1', f'fps={FPS}']
+        cad += _fx(c.get('fx'), W)
         if abs(c['veloc'] - 1.0) > 1e-3:
             cad.append(f'setpts=PTS/{c["veloc"]:.4f}')
+        # ojo con el nombre: `ent` es la lista de entradas de FFmpeg
+        f_ent, f_sal = c.get('fundido_ent', 0), c.get('fundido_sal', 0)
+        if f_ent > 0.01 or f_sal > 0.01 or c['opacidad'] < 0.999:
+            # hace falta canal alfa: un fundido sin el oscurece hacia negro en
+            # vez de dejar ver lo que haya debajo
+            cad.append('format=rgba')
+        if f_ent > 0.01:
+            cad.append(f'fade=t=in:st=0:d={f_ent:.3f}:alpha=1')
+        if f_sal > 0.01:
+            cad.append(f'fade=t=out:st={max(c["dur"] - f_sal, 0):.3f}:'
+                       f'd={f_sal:.3f}:alpha=1')
         # desplaza el clip al segundo que le toca en la linea de tiempo
         cad.append(f'setpts=PTS-STARTPTS+{c["t"]:.3f}/TB')
         if c['opacidad'] < 0.999:
-            cad.append(f'format=rgba,colorchannelmixer=aa={c["opacidad"]:.3f}')
+            cad.append(f'colorchannelmixer=aa={c["opacidad"]:.3f}')
         filtros.append(f'[{i}:v]' + ','.join(cad) + f'[v{i}]')
         capas.append({'i': i, 'desde': c['t'], 'hasta': c['t'] + c['dur'],
                       'x': 0, 'y': 0})

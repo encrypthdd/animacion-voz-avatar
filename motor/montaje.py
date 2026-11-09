@@ -36,6 +36,24 @@ MAX_PISTAS = 12
 MAX_DUR = 60 * 20          # 20 minutos de montaje
 ENCAJES = ('cubrir', 'contener', 'estirar')
 
+# ─── Efectos de imagen ─────────────────────────────────────────────────────
+# Cada ajuste va con su neutro y su rango. El neutro importa: con todos en su
+# sitio no se anade ni un filtro a la cadena, y el clip pasa tal cual.
+#
+# Al contrario que los rotulos, estos efectos NO se pueden dibujar una sola vez
+# y reutilizar: el navegador los aplica con los filtros de canvas y FFmpeg con
+# los suyos. Se han elegido parejas que hacen la misma cuenta, pero son dos
+# implementaciones, y por eso aqui no hay garantia de identidad, solo de
+# parecido. Es una diferencia real respecto al texto y conviene no olvidarla.
+FX = {
+    'brillo':     (1.0, 0.3, 2.0),
+    'contraste':  (1.0, 0.3, 2.2),
+    'saturacion': (1.0, 0.0, 2.5),
+    'tono':       (0.0, -180.0, 180.0),      # grados
+    'desenfoque': (0.0, 0.0, 0.04),          # en anchos de lienzo
+}
+MAX_FUNDIDO = 3.0
+
 # ─── Clips de texto ────────────────────────────────────────────────────────
 # Un rotulo es un clip mas: ocupa un tramo de una pista y se superpone a lo
 # que haya debajo. La diferencia es que no sale de ningun archivo, asi que no
@@ -215,8 +233,14 @@ def limpiar(p, medios=None):
             'opacidad': round(_num(c.get('opacidad'), 1.0, 0, 1.0), 3),
             'encaje': c.get('encaje') if c.get('encaje') in ENCAJES else 'cubrir',
             'nombre': (str(c.get('nombre') or ''))[:80],
+            'fundido_ent': round(_num(c.get('fundido_ent'), 0, 0, MAX_FUNDIDO), 3),
+            'fundido_sal': round(_num(c.get('fundido_sal'), 0, 0, MAX_FUNDIDO), 3),
         }
+        crudo = c.get('fx') if isinstance(c.get('fx'), dict) else {}
+        clip['fx'] = {k: round(_num(crudo.get(k), d, lo, hi), 4)
+                      for k, (d, lo, hi) in FX.items()}
         if es_texto:
+            clip['fundido_ent'] = clip['fundido_sal'] = 0.0
             clip['tipo'] = 'texto'
             clip['veloc'] = 1.0
             clip['entrada'] = 0.0
@@ -233,6 +257,13 @@ def limpiar(p, medios=None):
                 descartados += 1
                 continue
             clip['dur'] = round(min(clip['dur'], tope), 3)
+        # Dos fundidos que juntos duran mas que el clip se solaparian y el
+        # resultado seria un parpadeo. Se reparten lo que hay.
+        suma = clip['fundido_ent'] + clip['fundido_sal']
+        if suma > clip['dur'] and suma > 0:
+            k = clip['dur'] / suma
+            clip['fundido_ent'] = round(clip['fundido_ent'] * k, 3)
+            clip['fundido_sal'] = round(clip['fundido_sal'] * k, 3)
         clips.append(clip)
 
     clips.sort(key=lambda c: (c['t'], c['id']))

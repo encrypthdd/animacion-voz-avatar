@@ -129,6 +129,10 @@
               aria-label="Poner subtítulos al clip elegido">
         <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 14h4M14 14h3"/></svg>
       </button>
+      <button id="btn-fundir" class="icono" title="Encadenar con el clip de delante"
+              aria-label="Encadenar con el clip anterior">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/></svg>
+      </button>
     </div>
 
     <!-- propiedades del clip elegido -->
@@ -153,6 +157,47 @@
           <option value="estirar">Estirar</option>
         </select>
       </label>
+
+      <div id="inspector-fx" class="bloque-texto">
+        <h3 class="titulo-mini">Imagen</h3>
+        <div class="recetas">
+          <button class="chip" data-receta="vivo">Vivo</button>
+          <button class="chip" data-receta="calido">Cálido</button>
+          <button class="chip" data-receta="frio">Frío</button>
+          <button class="chip" data-receta="cine">Cine</button>
+          <button class="chip" data-receta="gris">Gris</button>
+          <button class="chip" data-receta="suave">Suave</button>
+          <button class="chip" id="f-reset">Sin filtro</button>
+        </div>
+        <label class="campo-fila">Brillo
+          <input type="range" id="f-brillo" min="0.3" max="2" step="0.01">
+          <output id="o-f-brillo"></output>
+        </label>
+        <label class="campo-fila">Contraste
+          <input type="range" id="f-contraste" min="0.3" max="2.2" step="0.01">
+          <output id="o-f-contraste"></output>
+        </label>
+        <label class="campo-fila">Saturación
+          <input type="range" id="f-saturacion" min="0" max="2.5" step="0.01">
+          <output id="o-f-saturacion"></output>
+        </label>
+        <label class="campo-fila">Tono
+          <input type="range" id="f-tono" min="-180" max="180" step="1">
+          <output id="o-f-tono"></output>
+        </label>
+        <label class="campo-fila">Desenfoque
+          <input type="range" id="f-desenfoque" min="0" max="0.04" step="0.0005">
+          <output id="o-f-desenfoque"></output>
+        </label>
+        <label class="campo-fila">Entra
+          <input type="range" id="f-ent" min="0" max="3" step="0.05">
+          <output id="o-f-ent"></output>
+        </label>
+        <label class="campo-fila">Sale
+          <input type="range" id="f-sal" min="0" max="3" step="0.05">
+          <output id="o-f-sal"></output>
+        </label>
+      </div>
 
       <div id="inspector-texto" class="bloque-texto" hidden>
         <label class="campo-alto" for="t-texto">Texto

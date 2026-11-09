@@ -289,6 +289,7 @@ function anadirClip(medioId, pistaId, t) {
     id: nuevoId(), pista: pistaId, medio: medioId,
     t: Math.max(t, 0), dur: m.tipo === 'imagen' ? 4 : Math.min(m.dur, 600),
     entrada: 0, veloc: 1, volumen: 1, opacidad: 1, encaje: 'cubrir',
+    fundido_ent: 0, fundido_sal: 0, fx: Object.assign({}, FX_NEUTRO),
     nombre: m.nombre,
   };
   c.t = acomodar(c, c.t);
@@ -299,9 +300,17 @@ function anadirClip(medioId, pistaId, t) {
 }
 
 function choca(c, t, dur) {
-  /* El primer clip de la misma pista al que pisaria. */
-  return E.montaje.clips.find((o) => o.id !== c.id && o.pista === c.pista &&
-    t < o.t + o.dur - 1e-4 && t + dur > o.t + 1e-4) || null;
+  /* El primer clip de la misma pista al que pisaria.
+     Un solape se permite cuando es exactamente la transicion de entrada de
+     este clip: ahi los dos tienen que convivir un momento, porque uno se
+     funde sobre el otro. */
+  const tolera = c.fundido_ent || 0;
+  return E.montaje.clips.find((o) => {
+    if (o.id === c.id || o.pista !== c.pista) return false;
+    if (!(t < o.t + o.dur - 1e-4 && t + dur > o.t + 1e-4)) return false;
+    if (tolera > 0 && o.t < t && (o.t + o.dur) - t <= tolera + 0.02) return false;
+    return true;
+  }) || null;
 }
 
 function acomodar(c, t) {
@@ -358,6 +367,33 @@ function borrarClip() {
   E.montaje.clips = E.montaje.clips.filter((c) => c.id !== E.elegido);
   E.elegido = null;
   cambiado({ paso: 'borrar' + nuevoId() });
+}
+
+function fundirConAnterior() {
+  /* Encadena el clip elegido con el que tiene justo delante en su pista.
+     El clip entrante se adelanta lo que dura la transicion y se funde sobre
+     el saliente: eso es un encadenado de toda la vida, y no hace falta
+     material de mas porque cada uno sigue tocando lo suyo. */
+  const c = clip(E.elegido);
+  if (!c || c.tipo === 'texto') {
+    error('Elige el clip que quieras encadenar con el de delante.');
+    return;
+  }
+  const antes = E.montaje.clips
+    .filter((o) => o.pista === c.pista && o.id !== c.id && o.t + o.dur <= c.t + 0.05)
+    .sort((a, b) => (b.t + b.dur) - (a.t + a.dur))[0];
+  if (!antes) {
+    error('No hay ningún clip delante de este en su pista.');
+    return;
+  }
+  const hueco = c.t - (antes.t + antes.dur);
+  const d = Math.min(0.6, antes.dur * 0.5, c.dur * 0.5);
+  if (d < 0.08) { error('Los clips son demasiado cortos para encadenarlos.'); return; }
+  c.fundido_ent = Math.round(d * 1000) / 1000;
+  c.t = Math.round((c.t - hueco - d) * 1000) / 1000;
+  error('');
+  cambiado({ paso: 'fundir' + c.id });
+  pintarInspector();
 }
 
 function duplicar() {
@@ -462,6 +498,11 @@ function pintarTiempo() {
     el.style.left = px(c.t) + 'px';
     el.style.width = Math.max(px(c.dur), 8) + 'px';
     if (c.tipo !== 'texto') Object.assign(el.style, fondoClip(c));
+    if (c.fundido_ent > 0.01) {
+      el.classList.add('fundido-ent');
+      el.style.setProperty('--fx', Math.min(px(c.fundido_ent), 60) + 'px');
+    }
+    if (c.fundido_sal > 0.01) el.classList.add('fundido-sal');
     el.innerHTML = `<div class="asa izq"></div><div class="asa der"></div>
                     <div class="etiqueta">${c.nombre || (m ? m.nombre : '?')}${
                       c.veloc !== 1 ? ` · ${c.veloc.toFixed(2)}×` : ''}</div>`;
@@ -518,7 +559,25 @@ function pintarInspector() {
   $('#p-volumen').value = c.volumen; $('#o-volumen').textContent = Math.round(c.volumen * 100) + '%';
   $('#p-opacidad').value = c.opacidad; $('#o-opacidad').textContent = Math.round(c.opacidad * 100) + '%';
   $('#p-encaje').value = c.encaje;
+  const fx = Object.assign({}, FX_NEUTRO, c.fx || {});
+  for (const [k, sel] of [['brillo', '#f-brillo'], ['contraste', '#f-contraste'],
+                          ['saturacion', '#f-saturacion'], ['tono', '#f-tono'],
+                          ['desenfoque', '#f-desenfoque']]) {
+    const n = $(sel);
+    if (!n) continue;
+    n.value = fx[k];
+    const o = $(sel.replace('#f-', '#o-f-'));
+    if (o) o.textContent = k === 'tono' ? Math.round(fx[k]) + '°'
+         : k === 'desenfoque' ? Math.round(fx[k] * 1000) / 10 + '%'
+         : Math.round(fx[k] * 100) + '%';
+  }
+  $('#f-ent').value = c.fundido_ent || 0;
+  $('#o-f-ent').textContent = (c.fundido_ent || 0).toFixed(2) + ' s';
+  $('#f-sal').value = c.fundido_sal || 0;
+  $('#o-f-sal').textContent = (c.fundido_sal || 0).toFixed(2) + ' s';
+
   const texto = c.tipo === 'texto';
+  $('#inspector-fx').hidden = texto;
   const esVideo = texto || (m && m.tipo !== 'audio');
   $('#p-veloc').closest('.campo-fila').hidden = texto;
   $('#p-opacidad').closest('.campo-fila').hidden = !esVideo;
@@ -1019,6 +1078,39 @@ function encajarLienzo() {
   cv.style.height = Math.floor(cv.height * k) + 'px';
 }
 
+const FX_NEUTRO = { brillo: 1, contraste: 1, saturacion: 1, tono: 0, desenfoque: 0 };
+const RECETAS = {
+  vivo:   { contraste: 1.18, saturacion: 1.35 },
+  calido: { brillo: 1.06, saturacion: 1.15, tono: -8 },
+  frio:   { contraste: 1.08, saturacion: 0.95, tono: 12 },
+  cine:   { contraste: 1.22, saturacion: 0.82, brillo: 0.96 },
+  gris:   { saturacion: 0 },
+  suave:  { contraste: 0.92, saturacion: 0.9, desenfoque: 0.0015 },
+};
+
+function filtroCanvas(c, W) {
+  /* El MISMO orden que arma exportar.py. Cambiar el orden cambia el
+     resultado: subir el brillo y luego el contraste no da lo mismo que al
+     reves, asi que los dos lados tienen que encadenar igual. */
+  const f = Object.assign({}, FX_NEUTRO, c.fx || {});
+  const partes = [];
+  if (Math.abs(f.brillo - 1) > 1e-3) partes.push(`brightness(${f.brillo})`);
+  if (Math.abs(f.contraste - 1) > 1e-3) partes.push(`contrast(${f.contraste})`);
+  if (Math.abs(f.saturacion - 1) > 1e-3) partes.push(`saturate(${f.saturacion})`);
+  if (Math.abs(f.tono) > 0.5) partes.push(`hue-rotate(${f.tono}deg)`);
+  if (f.desenfoque > 1e-4) partes.push(`blur(${(f.desenfoque * W).toFixed(2)}px)`);
+  return partes.length ? partes.join(' ') : 'none';
+}
+
+function alfaClip(c, t) {
+  /* Opacidad con los fundidos de entrada y salida ya aplicados. */
+  let a = c.opacidad;
+  const ent = c.fundido_ent || 0, sal = c.fundido_sal || 0;
+  if (ent > 0.01) a *= Math.min((t - c.t) / ent, 1);
+  if (sal > 0.01) a *= Math.min((c.t + c.dur - t) / sal, 1);
+  return Math.max(Math.min(a, 1), 0);
+}
+
 function encajar(g, src, sw, sh, W, H, modo) {
   if (!sw || !sh) return;
   if (modo === 'estirar') { g.drawImage(src, 0, 0, W, H); return; }
@@ -1081,7 +1173,8 @@ function dibujar() {
     const sh = m.tipo === 'imagen' ? el.naturalHeight : el.videoHeight;
     if (!sw) continue;
     g.save();
-    g.globalAlpha = c.opacidad;
+    g.globalAlpha = alfaClip(c, E.t);
+    g.filter = filtroCanvas(c, cv.width);
     encajar(g, el, sw, sh, cv.width, cv.height, c.encaje);
     g.restore();
   }
@@ -1472,6 +1565,42 @@ function conectar() {
   propTexto('#t-fundido', 'fundido', 'num');
   $('#btn-texto').onclick = anadirTexto;
   $('#btn-subtitular').onclick = subtitularClip;
+  $('#btn-fundir').onclick = fundirConAnterior;
+  const propFx = (sel, campo) => {
+    $(sel).oninput = () => {
+      const c = clip(E.elegido);
+      if (!c) return;
+      c.fx = Object.assign({}, FX_NEUTRO, c.fx || {});
+      c.fx[campo] = +$(sel).value;
+      pintarInspector(); cambiado({ repintar: false, paso: campo + c.id });
+    };
+  };
+  propFx('#f-brillo', 'brillo'); propFx('#f-contraste', 'contraste');
+  propFx('#f-saturacion', 'saturacion'); propFx('#f-tono', 'tono');
+  propFx('#f-desenfoque', 'desenfoque');
+  const propFund = (sel, campo) => {
+    $(sel).oninput = () => {
+      const c = clip(E.elegido);
+      if (!c) return;
+      c[campo] = +$(sel).value;
+      pintarInspector(); cambiado({ repintar: false, paso: campo + c.id });
+    };
+  };
+  propFund('#f-ent', 'fundido_ent'); propFund('#f-sal', 'fundido_sal');
+  $('#f-reset').onclick = () => {
+    const c = clip(E.elegido);
+    if (!c) return;
+    c.fx = Object.assign({}, FX_NEUTRO);
+    pintarInspector(); cambiado({ paso: 'fxreset' + nuevoId() });
+  };
+  for (const b of document.querySelectorAll('[data-receta]')) {
+    b.onclick = () => {
+      const c = clip(E.elegido);
+      if (!c) return;
+      c.fx = Object.assign({}, FX_NEUTRO, RECETAS[b.dataset.receta]);
+      pintarInspector(); cambiado({ paso: 'receta' + nuevoId() });
+    };
+  }
   $('#voz-generar').onclick = generarVoz;
   $('#voz-vel').oninput = () => {
     $('#o-voz-vel').textContent = ($('#voz-vel').value > 0 ? '+' : '') +

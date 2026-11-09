@@ -264,3 +264,21 @@
   color:var(--suave); cursor:pointer}
 .interruptor-fila input{width:16px; height:16px; accent-color:var(--violeta)}
 #voz-id{width:100%}
+
+/* ------------------------------------------------------- efectos */
+.recetas{display:flex; flex-wrap:wrap; gap:6px}
+.chip{
+  padding:6px 11px; font:600 12px/1 inherit; color:var(--suave);
+  background:var(--carta); border:1px solid var(--borde);
+  border-radius:999px; cursor:pointer; transition:var(--t);
+}
+.chip:hover{color:var(--texto); border-color:var(--violeta-claro);
+  background:var(--carta-alta)}
+.clip.fundido-ent::before, .clip.fundido-sal::after{
+  content:""; position:absolute; top:0; bottom:0; width:var(--fx, 10px);
+  pointer-events:none;
+}
+.clip.fundido-ent::before{left:0;
+  background:linear-gradient(90deg, rgba(0,0,0,.72), transparent)}
+.clip.fundido-sal::after{right:0;
+  background:linear-gradient(270deg, rgba(0,0,0,.72), transparent)}
