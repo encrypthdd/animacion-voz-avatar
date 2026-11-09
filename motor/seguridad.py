@@ -47,6 +47,10 @@ RUTAS = {
     '/api/generar': 'generar', '/api/avatar': 'subir', '/api/pose': 'subir',
     '/api/sticker': 'sticker', '/api/musica': 'subir', '/api/fondo': 'subir',
     '/api/muestra': 'muestra', '/entrar': 'entrar',
+    # el orden importa: se coge el primer prefijo que encaje, y borrar un
+    # medio no debe gastar el cupo de subir uno nuevo
+    '/api/medios/borrar': 'general',
+    '/api/medios': 'subir', '/api/exportar': 'generar',
 }
 
 _cubos = {}
@@ -228,6 +232,23 @@ def expuesto(host='127.0.0.1'):
             or os.environ.get('ESTUDIO_PROXY') == '1')
 
 
+def _tope_subida(fuera):
+    """Cuanto se admite subir de una vez.
+
+    Un avatar son 40 MB de sobra, pero el editor importa video: una grabacion
+    de movil de dos minutos pasa de 300 MB. En local el tope es alto porque el
+    unico que sube archivos eres tu; en cuanto el servidor queda expuesto baja
+    a 40 MB, porque ahi una subida enorme es la forma mas barata de tumbarlo.
+    """
+    env = os.environ.get('ESTUDIO_MAX_SUBIDA')
+    if env:
+        try:
+            return max(int(env), 1) * 1024 * 1024
+        except ValueError:
+            pass
+    return (40 if fuera else 2048) * 1024 * 1024
+
+
 def configurar(app, salida, host='127.0.0.1'):
     """Devuelve (clave, activa).
 
@@ -252,7 +273,7 @@ Define ESTUDIO_CLAVE antes de arrancar:
         SESSION_COOKIE_SAMESITE='Lax',
         SESSION_COOKIE_SECURE=os.environ.get('ESTUDIO_HTTPS') == '1',
         PERMANENT_SESSION_LIFETIME=12 * 3600,
-        MAX_CONTENT_LENGTH=40 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=_tope_subida(fuera),
     )
     if os.environ.get('ESTUDIO_PROXY') == '1':
         from werkzeug.middleware.proxy_fix import ProxyFix

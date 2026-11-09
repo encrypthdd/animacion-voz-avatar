@@ -11,7 +11,8 @@ import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
 import audio as mezcla
-import avatar, crear, estilo, fondos, medir, musica, poses, render, seguridad, sticker
+import avatar, crear, estilo, exportar, fondos, medios, medir, montaje, musica
+import poses, render, seguridad, sticker
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, 'web')
@@ -96,6 +97,11 @@ def estado_avatares():
 @app.route('/')
 def index():
     return send_from_directory(WEB, 'index.html')
+
+
+@app.route('/editor')
+def pagina_editor():
+    return send_from_directory(WEB, 'editor.html')
 
 
 @app.route('/stickers')
@@ -619,6 +625,162 @@ def api_sticker_archivo(tid, nombre):
     return send_file(ruta, mimetype=tipo,
                      as_attachment=request.args.get('descargar') == '1',
                      download_name=nombre, conditional=True)
+
+
+# ============================================================ EDITOR DE VIDEO
+MONTAJES = os.path.join(SALIDA, 'montajes')
+
+
+@app.get('/medios/<sub>/<nombre>')
+def archivo_medio(sub, nombre):
+    """Sirve los archivos de la biblioteca: copias ligeras, tiras y picos."""
+    if sub not in ('orig', 'copia', 'tira', 'poster', 'picos'):
+        abort(404)
+    base = os.path.join(medios.BASE, sub)
+    destino = os.path.normpath(os.path.join(base, nombre))
+    if not destino.startswith(base) or not os.path.isfile(destino):
+        abort(404)
+    # conditional=True para que el navegador pueda pedir trozos del video, que
+    # es lo que necesita para saltar por la linea de tiempo sin descargarlo entero
+    return send_file(destino, conditional=True)
+
+
+@app.get('/api/editor/inicio')
+def api_editor_inicio():
+    return jsonify({'medios': medios.listar(), 'montajes': montaje.listar(),
+                    'lienzos': montaje.LIENZOS, 'clave': CLAVE_ACTIVA})
+
+
+@app.post('/api/medios')
+def api_medios_subir():
+    f = request.files.get('archivo')
+    if not f or not f.filename:
+        return jsonify({'ok': False, 'error': 'No llegó ningún archivo.'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in medios.ACEPTADAS:
+        return jsonify({'ok': False, 'error':
+                        f'No se admite {ext or "ese formato"}. Vídeo, imagen o audio.'}), 400
+    tmp = os.path.join(AQUI, 'cache', 'subidas')
+    os.makedirs(tmp, exist_ok=True)
+    ruta = os.path.join(tmp, uuid.uuid4().hex + ext)
+    f.save(ruta)
+    try:
+        m = medios.importar(ruta, f.filename)
+    except (ValueError, OSError) as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+    finally:
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+    return jsonify({'ok': True, 'medio': m})
+
+
+@app.post('/api/medios/borrar')
+def api_medios_borrar():
+    d = request.get_json(force=True, silent=True) or {}
+    ok = medios.borrar(str(d.get('id') or '')[:32])
+    return jsonify({'ok': ok})
+
+
+@app.get('/api/montaje/<mid>')
+def api_montaje_leer(mid):
+    p = montaje.cargar(re.sub(r'[^a-f0-9]', '', mid)[:32])
+    if not p:
+        abort(404)
+    return jsonify(p)
+
+
+@app.post('/api/montaje')
+def api_montaje_guardar():
+    d = request.get_json(force=True, silent=True) or {}
+    cat = {m['id']: m for m in medios.listar()}
+    try:
+        p = montaje.limpiar(d, cat)
+    except ValueError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+    p = montaje.guardar(p)
+    return jsonify({'ok': True, 'montaje': p})
+
+
+@app.post('/api/montaje/borrar')
+def api_montaje_borrar():
+    d = request.get_json(force=True, silent=True) or {}
+    ok = montaje.borrar(re.sub(r'[^a-f0-9]', '', str(d.get('id') or ''))[:32])
+    return jsonify({'ok': ok})
+
+
+@app.post('/api/exportar')
+def api_exportar():
+    d = request.get_json(force=True, silent=True) or {}
+    cat = {m['id']: m for m in medios.listar()}
+    try:
+        p = montaje.limpiar(d.get('montaje') or {}, cat)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if not p['clips']:
+        return jsonify({'error': 'El montaje está vacío: añade al menos un clip.'}), 400
+    dur = montaje.duracion(p)
+    if dur > montaje.MAX_DUR:
+        return jsonify({'error': f'El montaje dura {dur:.0f} s y el tope son '
+                                 f'{montaje.MAX_DUR} s.'}), 400
+
+    calidad = 'rapida' if d.get('calidad') == 'rapida' else 'alta'
+    tid = uuid.uuid4().hex
+    os.makedirs(MONTAJES, exist_ok=True)
+    destino = os.path.join(MONTAJES, tid + '.mp4')
+    with _lock:
+        TRABAJOS[tid] = {'estado': 'cola', 'pct': 0, 'mensaje': 'En cola…',
+                         'archivo': destino, 'dur': dur}
+
+    def faena():
+        def avance(f):
+            with _lock:
+                TRABAJOS[tid].update(estado='trabajando', pct=int(f * 100),
+                                     mensaje='Exportando…')
+        if not seguridad.tomar_turno(espera=120):
+            with _lock:
+                TRABAJOS[tid].update(estado='error', pct=0,
+                                     mensaje='Hay otra exportación en marcha. '
+                                             'Espera a que acabe.')
+            return
+        try:
+            exportar.exportar(p, destino, calidad, avisar=avance)
+            with _lock:
+                TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo')
+        except Exception as e:
+            traceback.print_exc()
+            with _lock:
+                TRABAJOS[tid].update(estado='error', pct=0, mensaje=str(e)[:400])
+        finally:
+            seguridad.soltar_turno()
+
+    threading.Thread(target=faena, daemon=True).start()
+    return jsonify({'id': tid})
+
+
+@app.get('/api/exportacion/<tid>')
+def api_exportacion(tid):
+    with _lock:
+        t = TRABAJOS.get(tid)
+    if not t:
+        abort(404)
+    r = {k: v for k, v in t.items() if k != 'archivo'}
+    if t['estado'] == 'listo':
+        r['video'] = f'/montaje/{tid}.mp4'
+        r['descarga'] = f'/montaje/{tid}.mp4?descargar=1'
+    return jsonify(r)
+
+
+@app.get('/montaje/<tid>.mp4')
+def api_montaje_video(tid):
+    with _lock:
+        t = TRABAJOS.get(tid)
+    if not t or t['estado'] != 'listo' or not os.path.isfile(t['archivo']):
+        abort(404)
+    return send_file(t['archivo'], mimetype='video/mp4', conditional=True,
+                     as_attachment=request.args.get('descargar') == '1',
+                     download_name='montaje.mp4')
 
 
 if __name__ == '__main__':

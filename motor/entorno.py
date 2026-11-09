@@ -59,6 +59,23 @@ def ffmpeg():
         'O indica la ruta con la variable ESTUDIO_FFMPEG.')
 
 
+def ffprobe():
+    """Ruta de ffprobe. Viene junto a ffmpeg, asi que se deduce de el."""
+    env = os.environ.get('ESTUDIO_FFPROBE')
+    if env and os.path.isfile(env):
+        return env
+    hallado = shutil.which('ffprobe')
+    if hallado:
+        return hallado
+    ff = ffmpeg()
+    base = os.path.dirname(ff)
+    nombre = 'ffprobe.exe' if ff.lower().endswith('.exe') else 'ffprobe'
+    cand = os.path.join(base, nombre)
+    if os.path.isfile(cand):
+        return cand
+    raise RuntimeError('No se encuentra ffprobe; viene con FFmpeg.')
+
+
 def fuente():
     """Ruta a la tipografía de los subtítulos."""
     env = os.environ.get('ESTUDIO_FUENTE')

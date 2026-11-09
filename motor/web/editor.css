@@ -1,0 +1,223 @@
+/* Editor de vídeo. Complementa estilo.css, no lo sustituye: de allí vienen
+   los colores, los botones y los campos.
+
+   Un editor ocupa la pantalla entera y no se desplaza como una página: la
+   línea de tiempo va abajo del todo y lo que se desplaza es su interior. Por
+   eso aquí `body` tiene altura fija y rejilla, en vez del flujo normal. */
+
+:root{
+  --pista-alto:62px;
+  --nombres-ancho:132px;
+  --regla-alto:26px;
+}
+
+.cuerpo-editor{
+  height:100vh; overflow:hidden;
+  display:grid; grid-template-rows:auto auto minmax(0,1fr) auto;
+}
+
+/* ------------------------------------------------------------- barra */
+.barra-editor{
+  display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+  padding:12px clamp(12px,2vw,22px);
+  border-bottom:1px solid var(--borde); background:rgba(17,14,29,.72);
+  backdrop-filter:blur(14px);
+}
+.marca-mini{display:flex; align-items:center; gap:11px; min-width:0}
+.logo-mini{width:34px;height:34px;stroke:var(--violeta-claro);stroke-width:1.7;
+  padding:6px;border:1px solid var(--borde);border-radius:11px;background:var(--carta)}
+.nombre-montaje{
+  background:transparent; border:1px solid transparent; color:var(--texto);
+  font:600 17px/1.3 inherit; padding:6px 10px; border-radius:var(--r-s);
+  min-width:120px; max-width:260px; transition:var(--t);
+}
+.nombre-montaje:hover{border-color:var(--borde)}
+.nombre-montaje:focus{outline:none;border-color:var(--violeta);background:var(--carta)}
+.acciones-barra{display:flex; align-items:center; gap:10px; margin-left:auto; flex-wrap:wrap}
+.estado-guardado{color:var(--tenue); font-size:12.5px; min-width:74px; text-align:right}
+.campo-mini{padding:8px 11px; font-size:13.5px; width:auto}
+.barra-editor .nav{margin:0}
+
+/* ------------------------------------------------------- cuerpo arriba */
+.malla-editor{
+  display:grid; grid-template-columns:minmax(230px,290px) minmax(0,1fr);
+  gap:14px; padding:14px clamp(12px,2vw,22px); min-height:0; overflow:hidden;
+}
+.panel{
+  background:var(--carta); border:1px solid var(--borde); border-radius:var(--r-m);
+  padding:14px; display:flex; flex-direction:column; gap:12px; min-height:0;
+}
+.titulo-panel{font-size:13px; text-transform:uppercase; letter-spacing:.09em;
+  color:var(--suave); font-weight:600}
+.titulo-mini{font-size:14px; margin:0 0 4px; font-weight:600}
+.tenue{color:var(--tenue)}
+
+/* ------------------------------------------------------- bandeja medios */
+.soltar-medios{padding:16px 12px; gap:7px}
+.soltar-medios p{margin:0}
+.lista-medios{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;
+  gap:7px; overflow-y:auto; min-height:0; flex:1}
+.medio{
+  display:grid; grid-template-columns:54px minmax(0,1fr) auto; align-items:center;
+  gap:10px; padding:7px; border:1px solid var(--borde); border-radius:var(--r-s);
+  background:var(--carta); cursor:grab; transition:var(--t);
+}
+.medio:hover{background:var(--carta-alta); border-color:var(--borde-fuerte)}
+.medio:active{cursor:grabbing}
+.medio img{width:54px; height:38px; object-fit:cover; border-radius:6px;
+  background:#000; display:block}
+.medio .sinimg{width:54px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);
+  display:grid;place-items:center;color:var(--suave)}
+.medio b{display:block; font-size:13px; font-weight:600; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap}
+.medio small{color:var(--tenue); font-size:11.5px}
+.medio .descartar{background:none;border:none;color:var(--tenue);cursor:pointer;
+  padding:5px;border-radius:7px;transition:var(--t)}
+.medio .descartar:hover{color:var(--mal);background:rgba(248,113,113,.12)}
+.medio.subiendo{opacity:.55; cursor:default}
+
+/* ------------------------------------------------------- vista previa */
+.panel-vista{align-items:center}
+.marco-vista{
+  flex:1; min-height:0; width:100%; display:grid; place-items:center;
+  background:#05040A; border:1px solid var(--borde); border-radius:var(--r-s);
+  overflow:hidden;
+}
+/* El tamano en pantalla lo calcula editor.js: con max-width y max-height a la
+   vez el canvas se aplasta, porque cada limite recorta un lado sin mirar el
+   otro, y con `aspect-ratio` deja de encoger. Medir el hueco y repartir es lo
+   unico que sale bien en los dos sentidos. */
+#lienzo{display:block; background:#000; border-radius:4px}
+
+.mando{display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center}
+.separa{width:1px;height:22px;background:var(--borde);margin:0 4px}
+.icono{
+  display:grid; place-items:center; width:38px; height:38px; padding:0;
+  border:1px solid var(--borde); border-radius:11px; background:var(--carta);
+  color:var(--texto); cursor:pointer; transition:var(--t);
+}
+.icono:hover:not(:disabled){background:var(--carta-alta); border-color:var(--borde-fuerte)}
+.icono:disabled{opacity:.38; cursor:default}
+.icono.grande{width:46px;height:46px;background:var(--violeta);border-color:transparent}
+.icono.grande:hover{background:var(--violeta-claro)}
+.reloj{font-variant-numeric:tabular-nums; color:var(--suave); font-size:13.5px;
+  min-width:124px; text-align:center}
+
+.inspector{display:flex; flex-direction:column; gap:9px; width:100%;
+  border-top:1px solid var(--borde); padding-top:11px}
+.campo-fila{display:grid; grid-template-columns:86px minmax(0,1fr) 54px;
+  align-items:center; gap:10px; font-size:13px; color:var(--suave)}
+.campo-fila output{font-variant-numeric:tabular-nums; text-align:right;
+  color:var(--texto); font-size:12.5px}
+.campo-fila select{grid-column:2 / -1}
+
+/* ------------------------------------------------------- linea de tiempo */
+.tiempo{
+  border-top:1px solid var(--borde); background:rgba(9,8,15,.82);
+  display:flex; flex-direction:column; min-height:0;
+  height:clamp(252px, 36vh, 420px);
+}
+.cabecera-tiempo{display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:9px clamp(12px,2vw,22px) 7px}
+.zoom{display:flex; align-items:center; gap:8px; margin-left:auto}
+.zoom input[type=range]{width:140px}
+.boton.chico{padding:8px 13px; font-size:13px}
+
+.rejilla-tiempo{display:grid; grid-template-columns:var(--nombres-ancho) minmax(0,1fr);
+  flex:1; min-height:0; border-top:1px solid var(--borde)}
+.columna-nombres{
+  border-right:1px solid var(--borde); overflow:hidden; padding-top:var(--regla-alto);
+  background:rgba(255,255,255,.02);
+}
+.nombre-pista{
+  height:var(--pista-alto); display:flex; align-items:center; gap:6px;
+  padding:0 10px; border-bottom:1px solid var(--borde); font-size:12.5px;
+  color:var(--suave); overflow:hidden;
+}
+.nombre-pista span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1}
+.nombre-pista button{background:none;border:none;color:var(--tenue);cursor:pointer;
+  padding:4px;border-radius:6px;transition:var(--t)}
+.nombre-pista button:hover{color:var(--texto);background:var(--carta)}
+.nombre-pista button[aria-pressed=true]{color:var(--alerta)}
+.nombre-pista svg{width:15px;height:15px}
+
+.desplaza{overflow:auto; position:relative; min-height:0}
+.interior{position:relative; min-width:100%; height:max-content}
+
+.regla{
+  position:sticky; top:0; z-index:3; height:var(--regla-alto);
+  background:rgba(9,8,15,.95); border-bottom:1px solid var(--borde);
+  cursor:pointer; user-select:none;
+}
+.regla .hito{position:absolute; top:0; bottom:0; border-left:1px solid var(--borde);
+  padding-left:5px; font-size:10.5px; color:var(--tenue); line-height:var(--regla-alto)}
+
+#pistas{position:relative}
+.carril{
+  position:relative; height:var(--pista-alto);
+  border-bottom:1px solid var(--borde);
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.028) 0 1px,transparent 1px 100%);
+}
+.carril.destino{background-color:rgba(124,58,237,.12)}
+
+.clip{
+  position:absolute; top:4px; height:calc(var(--pista-alto) - 9px);
+  border-radius:8px; overflow:hidden; cursor:grab;
+  border:1px solid rgba(255,255,255,.22);
+  background:#241d3d center/auto 100% repeat-x;
+  box-shadow:0 4px 14px -6px rgba(0,0,0,.8);
+  user-select:none; touch-action:none;
+}
+.clip:active{cursor:grabbing}
+.clip.audio{background:linear-gradient(180deg,#1b3b35,#13282a)}
+.clip.elegido{border-color:var(--violeta-claro);
+  box-shadow:0 0 0 2px var(--violeta-claro), 0 6px 18px -6px rgba(0,0,0,.9)}
+.clip .etiqueta{
+  position:absolute; left:0; right:0; bottom:0; padding:2px 7px;
+  font-size:11px; font-weight:600; color:#fff; background:linear-gradient(transparent,rgba(0,0,0,.82));
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; pointer-events:none;
+}
+.clip .onda{position:absolute; inset:0; width:100%; height:100%; opacity:.55;
+  pointer-events:none}
+.clip .asa{
+  position:absolute; top:0; bottom:0; width:11px; cursor:ew-resize;
+  background:linear-gradient(90deg,rgba(255,255,255,.26),transparent);
+}
+.clip .asa.der{right:0; transform:scaleX(-1)}
+.clip .asa:hover{background:linear-gradient(90deg,rgba(255,255,255,.5),transparent)}
+
+.cabezal{position:absolute; top:0; bottom:0; width:0; z-index:4; pointer-events:none}
+.cabezal i{position:absolute; top:0; bottom:0; left:-1px; width:2px;
+  background:var(--rosa); box-shadow:0 0 10px rgba(236,72,153,.75)}
+.cabezal::before{
+  content:""; position:absolute; top:0; left:-6px; width:12px; height:12px;
+  background:var(--rosa); clip-path:polygon(0 0,100% 0,50% 100%);
+}
+
+/* ------------------------------------------------------- dialogos */
+.dialogo{
+  border:1px solid var(--borde-fuerte); border-radius:var(--r-m);
+  background:var(--fondo-2); color:var(--texto); max-width:min(92vw,520px);
+  width:100%; padding:22px; box-shadow:var(--sombra);
+}
+.dialogo::backdrop{background:rgba(5,4,10,.72); backdrop-filter:blur(3px)}
+.dialogo h2{font-size:19px; margin-bottom:10px}
+.dialogo .campo-fila{margin:12px 0}
+.pie-dialogo{display:flex; gap:10px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap}
+.video-resultado{width:100%; max-height:46vh; border-radius:var(--r-s);
+  margin-top:12px; background:#000; display:block}
+.lista-montajes{list-style:none; margin:0; padding:0; display:flex;
+  flex-direction:column; gap:7px; max-height:48vh; overflow-y:auto}
+.lista-montajes li{display:flex; align-items:center; gap:10px; padding:9px 11px;
+  border:1px solid var(--borde); border-radius:var(--r-s); background:var(--carta)}
+.lista-montajes b{font-size:14px}
+.lista-montajes small{color:var(--tenue); font-size:12px}
+.lista-montajes .crece{flex:1; min-width:0}
+
+/* ------------------------------------------------------- pantallas chicas */
+@media (max-width:900px){
+  .malla-editor{grid-template-columns:minmax(0,1fr); overflow-y:auto}
+  .panel-medios{max-height:34vh}
+  .cuerpo-editor{height:auto; min-height:100vh; overflow:visible}
+  .tiempo{height:300px}
+}

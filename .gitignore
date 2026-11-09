@@ -32,6 +32,14 @@ motor/cache/
 # Temporal de la envolvente de audio, por si queda huérfano.
 motor/**/voz.raw
 
+# Editor de video: la biblioteca de medios es material del usuario, y de cada
+# archivo se guardan ademas una copia ligera, una tira de miniaturas y los
+# picos de audio. Todo eso se regenera al reimportar.
+motor/medios/
+
+# Los montajes son archivos de proyecto de cada instalacion, no del producto.
+motor/montajes/
+
 # ─── Videos generados ────────────────────────────────────────────────────
 # Pesan megas y salen de los guiones. No van al repositorio.
 salida/
