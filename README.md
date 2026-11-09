@@ -329,7 +329,7 @@ Todo esto vive en [`motor/seguridad.py`](motor/seguridad.py) y está comprobado:
 
 | Riesgo | Control |
 |---|---|
-| Accesos no autorizados | Contraseña (`ESTUDIO_CLAVE`), sesión firmada de 12 h, cookie `HttpOnly` + `SameSite=Lax`. 8 intentos cada 15 min |
+| Accesos no autorizados | En local no pide nada: solo escucha en `127.0.0.1`. Al exponerlo exige `ESTUDIO_CLAVE` —y se niega a arrancar sin ella—, con sesión firmada de 12 h, cookie `HttpOnly` + `SameSite=Lax` y 8 intentos cada 15 min |
 | Quemar la CPU | 2 renders simultáneos como máximo, 6 por IP cada 15 min, guion de 1500 caracteres y 100 s de video |
 | Avalancha de peticiones | Límites por IP y por tipo de acción, con `Retry-After` |
 | Imágenes maliciosas | Se abre y verifica la imagen, no solo la extensión. Tope de 40 M de píxeles contra bombas de descompresión |

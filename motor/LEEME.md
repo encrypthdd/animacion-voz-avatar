@@ -31,13 +31,17 @@ Esas imágenes no se pierden: sirven como **poses de recurso** (ver más abajo).
 ## Interfaz web
 
 ```
-pip install flask                       # una sola vez
-set ESTUDIO_CLAVE=tu-contraseña         # Linux/Mac: export
-python app.py                           # -> http://127.0.0.1:5000
+pip install flask          # una sola vez
+python app.py              # -> http://127.0.0.1:5000
 ```
 
-Sin `ESTUDIO_CLAVE` se genera una al azar en cada arranque y se imprime en consola:
-cómodo en local, inútil en un servicio.
+**En local no pide contraseña.** El servidor solo escucha en `127.0.0.1`, así que
+nadie más puede llegar y la contraseña sería fricción sin beneficio.
+
+Pasa a pedirla sola en cuanto el servicio queda expuesto: si defines
+`ESTUDIO_CLAVE`, o si arrancas con `ESTUDIO_HOST` distinto de `127.0.0.1`, o con
+`ESTUDIO_PROXY=1`. Y si lo expones **sin** definir la clave, se niega a arrancar
+en vez de quedarse abierto.
 
 Todo desde el navegador: subir el avatar, subir poses, escuchar y elegir voz,
 escribir el guion, ver el video y descargarlo. Se corta con `Ctrl+C`.

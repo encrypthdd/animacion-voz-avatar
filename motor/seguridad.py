@@ -221,11 +221,29 @@ def _secreto():
     return s
 
 
-def configurar(app, salida):
-    clave = os.environ.get('ESTUDIO_CLAVE')
-    generada = not clave
-    if generada:
-        clave = secrets.token_urlsafe(9)
+def expuesto(host='127.0.0.1'):
+    """¿Se puede llegar desde fuera de este equipo?"""
+    return (host not in ('127.0.0.1', 'localhost', '::1')
+            or os.environ.get('ESTUDIO_PROXY') == '1')
+
+
+def configurar(app, salida, host='127.0.0.1'):
+    """Devuelve (clave, activa).
+
+    En local no se pide contraseña: el servidor solo escucha en 127.0.0.1, así
+    que nadie más puede llegar y la contraseña sería fricción sin beneficio.
+    En cuanto el servicio queda expuesto —otro host de escucha o un proxy
+    delante— pasa a ser obligatoria.
+    """
+    clave = (os.environ.get('ESTUDIO_CLAVE') or '').strip()
+    fuera = expuesto(host)
+    if fuera and not clave:
+        raise RuntimeError("""
+El servidor va a quedar accesible desde fuera y no hay contraseña.
+Define ESTUDIO_CLAVE antes de arrancar:
+    Linux/Mac:  export ESTUDIO_CLAVE="una-contraseña-larga"
+    Windows:    set ESTUDIO_CLAVE=una-contraseña-larga""")
+    activa = bool(clave)
 
     app.secret_key = _secreto()
     app.config.update(
@@ -250,7 +268,7 @@ def configurar(app, salida):
             r.status_code = 429
             r.headers['Retry-After'] = str(espera)
             return r
-        if ruta in libres:
+        if ruta in libres or not activa:
             return None
         if not session.get('ok'):
             if ruta.startswith('/api/'):
@@ -277,6 +295,8 @@ def configurar(app, salida):
 
     @app.route('/entrar', methods=['GET', 'POST'])
     def entrar():
+        if not activa:
+            return redirect('/')
         if request.method == 'GET':
             return send_from_directory(WEB, 'entrar.html')
         dada = (request.form.get('clave') or '')[:200]
@@ -292,4 +312,4 @@ def configurar(app, salida):
         session.clear()
         return redirect('/entrar')
 
-    return clave, generada
+    return clave, activa

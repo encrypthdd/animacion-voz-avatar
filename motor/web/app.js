@@ -21,6 +21,9 @@ async function arrancar() {
   estado.avatares = d.avatares;
   estado.poses = d.recursos;
   estado.imagenes = d.imagenes || [];
+  // sin contraseña no hay sesión que cerrar
+  const salir = document.querySelector('a[href="/salir"]');
+  if (salir) salir.hidden = !d.clave;
   pintarFondos(d.fondos);
   pintarFondosImagen();
   pintarPaises();

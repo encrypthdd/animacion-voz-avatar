@@ -21,7 +21,8 @@ LOGOS = os.path.join(AQUI, 'cache', 'logos')
 TAMANOS = [3, 4, 5, 6, 7, 8, 9, 10]      # lado del sticker, en centimetros
 
 app = Flask(__name__, static_folder=None)
-CLAVE, CLAVE_GENERADA = seguridad.configurar(app, SALIDA)
+HOST = os.environ.get('ESTUDIO_HOST', '127.0.0.1')
+CLAVE, CLAVE_ACTIVA = seguridad.configurar(app, SALIDA, HOST)
 
 TRABAJOS = {}
 _lock = threading.Lock()
@@ -105,7 +106,8 @@ def api_inicio():
               for n, (top, bot, _) in estilo.FONDOS.items()]
     return jsonify({'voces': voces(), 'fondos': fondos,
                     'imagenes': fondos_imagen(), 'planos': list(estilo.PLANOS),
-                    'avatares': rigs, 'recursos': recursos})
+                    'avatares': rigs, 'recursos': recursos,
+                    'clave': CLAVE_ACTIVA})
 
 
 @app.post('/api/avatar')
@@ -515,10 +517,11 @@ def api_sticker_archivo(tid, nombre):
 
 if __name__ == '__main__':
     print('Estudio de avatares -> http://127.0.0.1:5000')
-    if CLAVE_GENERADA:
-        print()
-        print('  No hay ESTUDIO_CLAVE, así que se generó una para esta sesión:')
-        print(f'      {CLAVE}')
-        print('  Cambia al arrancar. Para fijarla:  set ESTUDIO_CLAVE=tu-clave')
-        print()
-    app.run(host='127.0.0.1', port=5000, threaded=True, debug=False)
+    print()
+    if CLAVE_ACTIVA:
+        print('  Pide contraseña (la de ESTUDIO_CLAVE).')
+    else:
+        print('  Sin contraseña: solo escucha en 127.0.0.1, nadie más puede entrar.')
+        print('  Para pedirla igualmente:  set ESTUDIO_CLAVE=tu-clave')
+    print()
+    app.run(host=HOST, port=5000, threaded=True, debug=False)
