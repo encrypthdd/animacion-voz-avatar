@@ -473,6 +473,7 @@ async function generar() {
         guion, titulo: $('#titulo').value.trim(), voz: estado.voz,
         fondo: specFondo(), avatares: [...estado.elegidos],
         planos: $('#planos').value, recursos: $('#usar-recursos').checked,
+        subtitulos: $('#usar-subs').checked,
         musica: estado.musica, volumen_musica: estado.volMusica,
         ducking: estado.ducking,
         velocidad: +$('#velocidad').value,
@@ -498,6 +499,41 @@ function fallo(msg) {
   error(msg);
 }
 
+async function enviarAlEditor() {
+  /* El video que acaba de salir entra en la biblioteca del editor CON los
+     tiempos de cada palabra. Eso es lo que no se puede recuperar de un
+     archivo suelto, y lo que permite subtitularlo alli sin volver a locutar. */
+  const b = $('#al-editor');
+  if (!estado.ultimoVideo) return;
+  b.setAttribute('aria-disabled', 'true');
+  const antes = b.innerHTML;
+  b.textContent = 'Enviando…';
+  try {
+    const r = await pedir('/api/al-editor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: estado.ultimoVideo,
+                             nombre: $('#titulo').value || 'Avatar' }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'no se pudo enviar');
+    const m = $('#msg-editor');
+    m.hidden = false;
+    m.innerHTML = d.palabras
+      ? `Está en el editor, con los tiempos de ${d.palabras} palabras. ` +
+        (d.con_subs
+          ? 'Ojo: lleva los subtítulos grabados, así que no le pongas otros. '
+          : 'Elige el clip y dale a subtitular. ') +
+        '<a href="/editor">Abrir el editor</a>'
+      : 'Está en el editor. <a href="/editor">Abrirlo</a>';
+    error('');
+  } catch (e) {
+    error('No se pudo enviar al editor: ' + e.message);
+  } finally {
+    b.removeAttribute('aria-disabled');
+    b.innerHTML = antes;
+  }
+}
+
 async function sondear(id) {
   try {
     const t = await (await pedir('/api/trabajo/' + id)).json();
@@ -511,6 +547,8 @@ async function sondear(id) {
     v.src = t.video; v.hidden = false; v.load();
     $('#descargar').href = t.descarga;
     $('#acciones').hidden = false;
+    $('#msg-editor').hidden = true;
+    estado.ultimoVideo = id;
     $('#generar').removeAttribute('aria-disabled');
 
     const f = $('#ficha');
@@ -617,3 +655,5 @@ $('#desenfoque').addEventListener('input', (e) => {
 });
 pintarMuestraColor();
 arrancar();
+
+$('#al-editor').onclick = enviarAlEditor;

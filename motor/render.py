@@ -82,6 +82,10 @@ class Video:
         return chunks
 
     def _subs(self, img, t):
+        # Se pueden dejar fuera para ponerlos luego en el editor, donde se
+        # pueden mover, cambiar de estilo y rehacer sin volver a montar.
+        if not self.cfg.get('subtitulos', True):
+            return
         ch = next((c for c in self.chunks
                    if c[0]['t'] - .12 <= t <= c[-1]['t'] + c[-1]['d'] + .22), None)
         if not ch:

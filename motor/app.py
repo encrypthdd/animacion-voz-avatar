@@ -405,7 +405,10 @@ def _trabajar(tid, cfg, texto, salida):
         if rc != 0:
             raise RuntimeError(f'ffmpeg devolvió {rc}')
         with _lock:
+            # `datos` guarda words.json: de ahi salen los tiempos por palabra
+            # si luego se manda el video al editor
             TRABAJOS[tid].update(estado='listo', pct=100, mensaje='Listo',
+                                 voz_datos=datos, con_subs=cfg['subtitulos'],
                                  video=f'/media/../salida/{os.path.basename(salida)}',
                                  planos=[{'tipo': n, 'desde': round(f0/30, 1),
                                           'hasta': round(f1/30, 1)}
@@ -441,6 +444,7 @@ def api_generar():
     pl = d.get('planos', 'si')
     cfg['planos'] = True if pl == 'si' else (False if pl == 'no' else pl)
     cfg['recursos'] = bool(d.get('recursos', True))
+    cfg['subtitulos'] = bool(d.get('subtitulos', True))
     pista = limpio(d.get('musica') or '') if d.get('musica') else ''
     cfg['musica'] = pista if musica.ruta(pista) else ''
     try:
@@ -485,6 +489,50 @@ def api_trabajo(tid):
         r['video'] = f'/video/{tid}.mp4'
         r['descarga'] = f'/descargar/{tid}'
     return jsonify(r)
+
+
+@app.post('/api/al-editor')
+def api_al_editor():
+    """Mete en la biblioteca del editor un video que acaba de hacer el estudio.
+
+    Lo que hace util este puente no es ahorrarse la descarga: es que el video
+    llega con los tiempos de cada palabra. El estudio los tiene porque los
+    devolvio el servicio de voz; el editor, con un archivo suelto, no tendria
+    forma de saberlos. Asi se le pueden poner subtitulos en el editor sin
+    volver a locutar nada.
+    """
+    d = request.get_json(force=True, silent=True) or {}
+    tid = re.sub(r'[^a-f0-9]', '', str(d.get('id') or ''))[:32]
+    with _lock:
+        t = TRABAJOS.get(tid)
+    if not t or t.get('estado') != 'listo':
+        return jsonify({'ok': False, 'error': 'Ese video ya no está disponible.'}), 404
+    archivo = t.get('archivo')
+    if not archivo or not os.path.isfile(archivo):
+        return jsonify({'ok': False, 'error': 'El archivo del video ya no está.'}), 404
+
+    nombre = (d.get('nombre') or '').strip() or 'Avatar'
+    try:
+        ficha = medios.importar(archivo, nombre[:60] + '.mp4')
+    except (ValueError, OSError) as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 400
+
+    palabras = []
+    carpeta = t.get('voz_datos')
+    if carpeta:
+        try:
+            with open(os.path.join(carpeta, 'words.json'), encoding='utf-8') as f:
+                palabras = [{'w': w['w'], 'p': w.get('p', ''),
+                             't0': round(w['t'], 3),
+                             't1': round(w['t'] + w['d'], 3)}
+                            for w in json.load(f)]
+        except (OSError, ValueError, KeyError):
+            palabras = []
+    if palabras:
+        medios.guardar_palabras(ficha['id'], palabras)
+        ficha = medios.ficha(medios.obtener(ficha['id']))
+    return jsonify({'ok': True, 'medio': ficha, 'palabras': len(palabras),
+                    'con_subs': bool(t.get('con_subs', True))})
 
 
 @app.get('/video/<tid>.mp4')

@@ -24,7 +24,8 @@ CACHE = os.path.join(AQUI, 'cache')
 POR_DEFECTO = {'voz': 'es-MX-JorgeNeural', 'rate': '+9%', 'pitch': '-2Hz',
                'fondo': 'violeta', 'planos': 'si', 'titulo': '',
                'recursos': 'si', 'avatar': 'base',
-               'musica': '', 'volumen_musica': '-18', 'ducking': 'si'}
+               'musica': '', 'volumen_musica': '-18', 'ducking': 'si',
+               'subtitulos': 'si'}
 SI = {'si', 'sí', 'true', '1', 'yes'}
 NO = {'no', 'false', '0'}
 
@@ -47,6 +48,7 @@ def leer_guion(ruta):
     r = str(cfg['recursos']).strip().lower()
     cfg['recursos'] = True if r in SI else (False if r in NO else r)
     cfg['ducking'] = str(cfg['ducking']).strip().lower() not in NO
+    cfg['subtitulos'] = str(cfg['subtitulos']).strip().lower() not in NO
     return cfg, ' '.join(texto)
 
 

@@ -53,6 +53,7 @@ RUTAS = {
     # (borrar, leer las palabras de una voz) es barato y no gasta ese cupo
     '/api/medios/': 'general',
     '/api/medios': 'subir', '/api/exportar': 'generar',
+    '/api/al-editor': 'subir',
     '/api/voz': 'sticker',   # locutar cuesta segundos y sale a internet
 }
 
