@@ -173,6 +173,38 @@
         </div>
       </fieldset>
 
+      <fieldset class="campo">
+        <legend>Música de fondo <em>· opcional</em></legend>
+
+        <div class="soltar compacto" id="soltar-musica">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>
+          <p><strong>Arrastra una pista aquí</strong></p>
+          <label class="boton secundario">
+            Elegir audio
+            <input type="file" id="file-musica" class="archivo"
+                   accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac,audio/aac,.mp3,.wav,.m4a,.ogg,.flac,.aac">
+          </label>
+          <p class="mini">MP3, WAV, M4A, OGG o FLAC</p>
+        </div>
+
+        <ul class="pistas" id="lista-musica" role="listbox" aria-label="Pistas"></ul>
+        <audio id="repro-musica" hidden></audio>
+
+        <div class="dos ajustes-musica" id="ajustes-musica" hidden>
+          <label class="campo">
+            <span>Volumen · <output id="vol-val">−18 dB</output></span>
+            <input type="range" id="vol-musica" min="-32" max="-8" step="1" value="-18">
+          </label>
+          <label class="interruptor" style="margin-top:26px">
+            <input type="checkbox" id="ducking" checked>
+            <span class="pista" aria-hidden="true"></span>
+            <span>Bajar la música al hablar</span>
+          </label>
+        </div>
+        <p class="mini" id="nota-musica" hidden>El ducking baja la música unos 9 dB
+           mientras hablas y la deja subir en las pausas. Sin él, la cama se come la voz.</p>
+      </fieldset>
+
       <div class="dos">
         <label class="campo">
           <span>Cámara</span>

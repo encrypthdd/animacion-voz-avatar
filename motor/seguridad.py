@@ -45,7 +45,8 @@ LIMITES = {
 # consuman el cupo de 'sticker', que es el de crear uno nuevo.
 RUTAS = {
     '/api/generar': 'generar', '/api/avatar': 'subir', '/api/pose': 'subir',
-    '/api/sticker': 'sticker', '/api/muestra': 'muestra', '/entrar': 'entrar',
+    '/api/sticker': 'sticker', '/api/musica': 'subir', '/api/fondo': 'subir',
+    '/api/muestra': 'muestra', '/entrar': 'entrar',
 }
 
 _cubos = {}

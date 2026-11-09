@@ -3,7 +3,8 @@
 import json, math, os, subprocess, sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import avatar, anim, entorno, estilo, poses
+import audio as mezcla
+import avatar, anim, entorno, estilo, musica, poses
 import entorno
 
 W, H, FPS = 1080, 1920, 30
@@ -240,11 +241,19 @@ class Video:
 
     def encode(self, salida, progreso=True, cb=None):
         total = self.NF + 10
-        audio = os.path.join(self.datos, 'voz.mp3')
+        voz = os.path.join(self.datos, 'voz.mp3')
+        pista = musica.ruta(self.cfg.get('musica'))
+        try:
+            vol = float(self.cfg.get('volumen_musica', mezcla.VOL_MUSICA))
+        except (TypeError, ValueError):
+            vol = mezcla.VOL_MUSICA
+        extra = mezcla.args(self.NF / FPS, pista, vol,
+                            bool(self.cfg.get('ducking', True)),
+                            bool(self.cfg.get('normalizar', True)))
         p = subprocess.Popen(
             [FF, '-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
-             '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-', '-i', audio,
-             '-c:v', 'libx264', '-preset', 'medium', '-crf', '20',
+             '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-', '-i', voz] + extra +
+            ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20',
              '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k',
              '-shortest', salida], stdin=subprocess.PIPE)
         try:

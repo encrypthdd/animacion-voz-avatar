@@ -10,7 +10,8 @@ import asyncio, io, json, os, re, threading, time, traceback, unicodedata, uuid
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
-import avatar, crear, estilo, fondos, medir, poses, render, seguridad, sticker
+import audio as mezcla
+import avatar, crear, estilo, fondos, medir, musica, poses, render, seguridad, sticker
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, 'web')
@@ -107,7 +108,7 @@ def api_inicio():
     return jsonify({'voces': voces(), 'fondos': fondos,
                     'imagenes': fondos_imagen(), 'planos': list(estilo.PLANOS),
                     'avatares': rigs, 'recursos': recursos,
-                    'clave': CLAVE_ACTIVA})
+                    'musica': musica.listar(), 'clave': CLAVE_ACTIVA})
 
 
 @app.post('/api/avatar')
@@ -218,6 +219,40 @@ def api_fondo():
         aviso = 'Es apaisada: al recortarla a vertical se pierden los lados.'
     return jsonify({'ok': True, 'nombre': nombre, 'aviso': aviso,
                     'mini': f'/media/fondos/{nombre}_mini.jpg?t={int(time.time())}'})
+
+
+@app.post('/api/musica')
+def api_musica():
+    f = request.files.get('archivo')
+    if not f or not f.filename:
+        return jsonify({'ok': False, 'error': 'No llegó ningún archivo.'}), 400
+    nombre = limpio(request.form.get('nombre') or f.filename)
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ('.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'):
+        return jsonify({'ok': False, 'error': 'Formato no admitido. '
+                        'Usa MP3, WAV, M4A, OGG, FLAC o AAC.'}), 400
+    os.makedirs(musica.FUENTE, exist_ok=True)
+    tmp = os.path.join(musica.FUENTE, nombre + ext)
+    f.save(tmp)
+    try:
+        nom, dur = musica.guardar(tmp, nombre)
+    except Exception as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return jsonify({'ok': False, 'error': f'No se pudo procesar: {e}'}), 400
+    aviso = ''
+    if dur < 15:
+        aviso = f'La pista dura {dur:.0f} s: se repetirá en bucle y puede cansar.'
+    return jsonify({'ok': True, 'nombre': nom, 'dur': dur, 'aviso': aviso,
+                    'url': f'/media/musica/{nom}.m4a?t={int(time.time())}'})
+
+
+@app.post('/api/musica/borrar')
+def api_musica_borrar():
+    d = request.get_json(force=True, silent=True) or {}
+    return jsonify({'ok': musica.borrar(limpio(d.get('nombre') or ''))})
 
 
 @app.post('/api/fondo/borrar')
@@ -336,6 +371,14 @@ def api_generar():
     pl = d.get('planos', 'si')
     cfg['planos'] = True if pl == 'si' else (False if pl == 'no' else pl)
     cfg['recursos'] = bool(d.get('recursos', True))
+    pista = limpio(d.get('musica') or '') if d.get('musica') else ''
+    cfg['musica'] = pista if musica.ruta(pista) else ''
+    try:
+        cfg['volumen_musica'] = min(max(float(d.get('volumen_musica', -18)), -40), -6)
+    except (TypeError, ValueError):
+        cfg['volumen_musica'] = mezcla.VOL_MUSICA
+    cfg['ducking'] = bool(d.get('ducking', True))
+    cfg['normalizar'] = bool(d.get('normalizar', True))
     try:
         cfg['rate'] = f"{int(d.get('velocidad', 9)):+d}%"
     except (TypeError, ValueError):

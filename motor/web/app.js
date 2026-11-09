@@ -7,6 +7,7 @@ const estado = {
   poses: [], trabajo: null,
   fondo: { modo: 'degradado', id: 'violeta', color: '#7C3AED', imagen: null,
            oscurecer: 0.45, desenfoque: 0.35 },
+  musica: null, volMusica: -18, ducking: true, pistas: [],
 };
 
 // ───────────────────────────────────────────────────────────── arranque
@@ -26,6 +27,8 @@ async function arrancar() {
   if (salir) salir.hidden = !d.clave;
   pintarFondos(d.fondos);
   pintarFondosImagen();
+  estado.pistas = d.musica || [];
+  pintarMusica();
   pintarPaises();
   pintarVoces();
   pintarAvatares();
@@ -244,6 +247,8 @@ function pintarFondosImagen() {
       estado.imagenes = estado.imagenes.filter((x) => x.nombre !== f.nombre);
       if (estado.fondo.imagen === f.nombre) estado.fondo.imagen = null;
       pintarFondosImagen();
+  estado.pistas = d.musica || [];
+  pintarMusica();
     };
     ul.appendChild(li);
   });
@@ -280,6 +285,64 @@ function specFondo() {
   return { tipo: 'degradado', id: f.id };
 }
 
+// ───────────────────────────────────────────────────────────── música
+function pintarMusica() {
+  const ul = $('#lista-musica');
+  ul.innerHTML = '';
+  const fila = (nombre, etiqueta, meta) => {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', estado.musica === nombre);
+    li.tabIndex = 0;
+    li.innerHTML = `<span class="datos"><span class="nom">${etiqueta}</span>
+        <span class="meta">${meta}</span></span>`;
+    const elegir = () => { estado.musica = nombre; pintarMusica(); };
+    li.onclick = elegir;
+    li.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); elegir(); }
+    };
+    ul.appendChild(li);
+    return li;
+  };
+
+  fila(null, 'Sin música', 'solo la voz');
+
+  (estado.pistas || []).forEach((m) => {
+    const li = fila(m.nombre, m.nombre, Math.round(m.dur) + ' s');
+    const oir = document.createElement('button');
+    oir.type = 'button'; oir.className = 'escuchar';
+    oir.setAttribute('aria-label', 'Escuchar ' + m.nombre);
+    oir.innerHTML = ico.play;
+    oir.onclick = (e) => {
+      e.stopPropagation();
+      const a = $('#repro-musica');
+      if (!a.paused && a.dataset.n === m.nombre) { a.pause(); return; }
+      a.src = m.url; a.dataset.n = m.nombre; a.volume = 0.5;
+      a.play().catch(() => error('No se pudo reproducir la pista.'));
+    };
+    const quitar = document.createElement('button');
+    quitar.type = 'button'; quitar.className = 'quitar';
+    quitar.setAttribute('aria-label', 'Quitar ' + m.nombre);
+    quitar.innerHTML = ico.equis;
+    quitar.onclick = async (e) => {
+      e.stopPropagation();
+      await pedir('/api/musica/borrar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: m.nombre }),
+      });
+      estado.pistas = estado.pistas.filter((x) => x.nombre !== m.nombre);
+      if (estado.musica === m.nombre) estado.musica = null;
+      pintarMusica();
+    };
+    li.append(oir, quitar);
+  });
+
+  const hay = !!estado.musica;
+  $('#ajustes-musica').hidden = !hay;
+  $('#nota-musica').hidden = !hay;
+  if (!hay) { const a = $('#repro-musica'); if (a) a.pause(); }
+}
+
 // ───────────────────────────────────────────────────────────── generar
 async function generar() {
   const guion = $('#guion').value.trim();
@@ -304,6 +367,8 @@ async function generar() {
         guion, titulo: $('#titulo').value.trim(), voz: estado.voz,
         fondo: specFondo(), avatares: [...estado.elegidos],
         planos: $('#planos').value, recursos: $('#usar-recursos').checked,
+        musica: estado.musica, volumen_musica: estado.volMusica,
+        ducking: estado.ducking,
         velocidad: +$('#velocidad').value,
       }),
     })).json();
@@ -396,11 +461,25 @@ conectarSubida('#soltar-pose', '#file-pose', '/api/pose', true, (r) => {
   estado.poses.push({ nombre: r.nombre, img: r.img });
   pintarPoses();
 });
+conectarSubida('#soltar-musica', '#file-musica', '/api/musica', false, (r) => {
+  estado.pistas = (estado.pistas || []).filter((x) => x.nombre !== r.nombre);
+  estado.pistas.push({ nombre: r.nombre, dur: r.dur, url: r.url });
+  estado.musica = r.nombre;
+  pintarMusica();
+});
+$('#vol-musica').addEventListener('input', (e) => {
+  estado.volMusica = +e.target.value;
+  $('#vol-val').textContent = '−' + Math.abs(e.target.value) + ' dB';
+});
+$('#ducking').addEventListener('change', (e) => { estado.ducking = e.target.checked; });
+
 conectarSubida('#soltar-fondo', '#file-fondo', '/api/fondo', false, (r) => {
   estado.imagenes = (estado.imagenes || []).filter((x) => x.nombre !== r.nombre);
   estado.imagenes.push({ nombre: r.nombre, mini: r.mini });
   estado.fondo.imagen = r.nombre;
   pintarFondosImagen();
+  estado.pistas = d.musica || [];
+  pintarMusica();
 });
 
 // ── controles del fondo ──────────────────────────────────────────────

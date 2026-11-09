@@ -100,6 +100,54 @@ defecto, así que un guion puede ser solo texto.
 
 Para que salga siempre de cuerpo entero sin cortes: `# planos: completo`.
 
+## Audio
+
+Dos cosas que separan un video casero de uno que suena profesional.
+
+### Normalización
+
+Siempre activa. Todo se lleva a **−14 LUFS** con el pico por debajo de −1.5 dBTP,
+que es el objetivo habitual de las plataformas. Sin esto cada video sale con un
+volumen distinto y en un feed se nota. Medido: la voz sale del sintetizador a
+−19 LUFS y el video final queda en −14.
+
+### Cama musical con ducking
+
+```
+# musica: calma
+# volumen_musica: -18
+# ducking: si
+```
+
+Las pistas se suben desde la web o se dejan en `musica_fuente/` y se procesan con
+`python musica.py`. Se normalizan a −20 LUFS al guardarlas, para que cambiar de
+canción no descoloque la mezcla.
+
+**El ducking es lo que hace que la música acompañe en vez de estorbar.** Baja la
+cama automáticamente mientras hablas y la deja subir en las pausas, usando la voz
+como disparador (`sidechaincompress`).
+
+Los números salen de medir, no de estimar:
+
+| | En las pausas | Mientras hablas |
+|---|---|---|
+| Sin música | −69 dB | −10.7 dB |
+| Con cama a −18 dB | **−40.6 dB** | −12.0 dB |
+
+La música queda 29 dB por encima del silencio en las pausas y solo suma 1.3 dB
+sobre la voz. El `ratio` del compresor es 3, que baja la cama 9.2 dB al hablar:
+con ratio 8 bajaba 12 dB y la música desaparecía. La soltada de 350 ms evita que
+suba y baje entre palabra y palabra.
+
+La pista se repite en bucle si es más corta que el video, y lleva entrada de
+0.8 s y salida de 1.4 s.
+
+**Dónde conseguir música libre:** la librería de la propia plataforma es lo mejor
+para el alcance, pero se añade allí, no aquí. Para incrustarla en el archivo:
+Pixabay Music, Free Music Archive o la Biblioteca de Audio de YouTube.
+
+Las pistas **no se versionan**: son contenido con derechos de un tercero.
+
 ## Fondos
 
 Tres modos, en la interfaz o en la cabecera del guion:

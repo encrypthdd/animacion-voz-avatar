@@ -21,6 +21,11 @@ motor/poses/
 motor/fondos/
 motor/fondos_fuente/
 
+# Música: contenido del usuario y casi siempre con derechos de un tercero.
+# No tiene nada que hacer en el repositorio.
+motor/musica/
+motor/musica_fuente/
+
 # Voz cacheada: se vuelve a pedir sola la primera vez que haga falta.
 motor/cache/
 
