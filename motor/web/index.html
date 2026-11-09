@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%237C3AED'/%3E%3Cpath d='M12 5a3 3 0 0 1 3 3v3a3 3 0 0 1-6 0V8a3 3 0 0 1 3-3Z' fill='white'/%3E%3Cpath d='M7 12a5 5 0 0 0 10 0M12 17v2' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <title>Estudio de Avatares</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -86,7 +87,7 @@
       </div>
 
       <div class="filtros">
-        <div class="segmentado" role="group" aria-label="Género de la voz">
+        <div class="segmentado" id="seg-voz" role="group" aria-label="Género de la voz">
           <button type="button" class="activo" data-genero="">Todas</button>
           <button type="button" data-genero="femenino">Femenina</button>
           <button type="button" data-genero="masculino">Masculina</button>
@@ -121,7 +122,55 @@
 
       <fieldset class="campo">
         <legend>Fondo</legend>
-        <div class="fondos" id="fondos" role="radiogroup" aria-label="Fondo"></div>
+        <div class="segmentado" id="seg-fondo" role="group" aria-label="Tipo de fondo">
+          <button type="button" class="activo" data-modo="degradado">Degradado</button>
+          <button type="button" data-modo="color">Color propio</button>
+          <button type="button" data-modo="imagen">Imagen</button>
+        </div>
+
+        <div class="panel-fondo" id="panel-degradado">
+          <div class="fondos" id="fondos" role="radiogroup" aria-label="Degradado"></div>
+        </div>
+
+        <div class="panel-fondo" id="panel-color" hidden>
+          <div class="fila-color">
+            <input type="color" id="color-fondo" value="#7C3AED"
+                   aria-label="Color del fondo">
+            <input type="text" id="color-hex" value="#7C3AED" maxlength="7"
+                   spellcheck="false" aria-label="Color en hexadecimal">
+            <span class="muestra-fondo" id="muestra-color" aria-hidden="true"></span>
+          </div>
+          <p class="mini">Del color se deriva un degradado con resplandor: un color
+             plano se ve muerto en video.</p>
+        </div>
+
+        <div class="panel-fondo" id="panel-imagen" hidden>
+          <div class="soltar compacto" id="soltar-fondo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <p><strong>Arrastra una imagen aquí</strong></p>
+            <label class="boton secundario">
+              Elegir imagen
+              <input type="file" id="file-fondo" class="archivo"
+                     accept="image/png,image/jpeg,image/webp">
+            </label>
+            <p class="mini">Vertical y de al menos 1080×1920</p>
+          </div>
+          <ul class="rejilla fondos-img" id="lista-fondos" role="list"></ul>
+          <p class="vacio" id="vacio-fondos">Todavía no has subido ninguna imagen.</p>
+
+          <div class="dos ajustes-fondo" id="ajustes-fondo" hidden>
+            <label class="campo">
+              <span>Oscurecer · <output id="osc-val">45%</output></span>
+              <input type="range" id="oscurecer" min="0" max="80" step="5" value="45">
+            </label>
+            <label class="campo">
+              <span>Desenfoque · <output id="des-val">35%</output></span>
+              <input type="range" id="desenfoque" min="0" max="100" step="5" value="35">
+            </label>
+          </div>
+          <p class="mini" id="nota-fondo" hidden>Sin desenfocar ni oscurecer, la foto
+             compite con la cara y el conjunto se ve como un collage.</p>
+        </div>
       </fieldset>
 
       <div class="dos">

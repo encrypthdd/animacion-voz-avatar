@@ -16,6 +16,11 @@ env/
 motor/rigs/
 motor/poses/
 
+# Fondos de imagen: son contenido del usuario, propios de cada instalación, y
+# pueden pesar. No forman parte del producto.
+motor/fondos/
+motor/fondos_fuente/
+
 # Voz cacheada: se vuelve a pedir sola la primera vez que haga falta.
 motor/cache/
 

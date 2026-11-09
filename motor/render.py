@@ -44,7 +44,7 @@ class Video:
             raise RuntimeError('no hay ningun avatar medido en rigs/ '
                                '(usa: python medir.py imagen.png nombre)')
         self.rigs = [avatar.cargar(n) for n in nombres]
-        self.bg = estilo.fondo(self.cfg.get('fondo', 'violeta'), W, H)
+        self.bg, self._bg_deriva = estilo.fondo(self.cfg.get('fondo', 'violeta'), W, H)
         self.fuente = ImageFont.truetype(estilo.FUENTE, 84)
         self.f_tit = ImageFont.truetype(estilo.FUENTE, 52)
         self.words = json.load(open(os.path.join(datos, 'words.json'), encoding='utf-8'))
@@ -188,6 +188,18 @@ class Video:
         return 'medio', 0.0, self.rigs[0]
 
     # ---------------- fotograma ----------------
+    def _lienzo(self, j):
+        """Fondo del fotograma. Si es una foto, se guarda más grande que el
+        lienzo y se recorta una ventana que va a la deriva: da movimiento sin
+        pagar un reescalado por fotograma."""
+        if not self._bg_deriva:
+            return self.bg.copy()
+        t = j / FPS
+        mx, my = self.bg.width - W, self.bg.height - H
+        x = (0.5 + 0.5 * math.sin(2 * math.pi * t / 23.0)) * mx
+        y = (0.5 + 0.5 * math.sin(2 * math.pi * t / 31.0 + 1.1)) * my
+        return self.bg.crop((int(x), int(y), int(x) + W, int(y) + H))
+
     def _capa_pose(self, nombre, avance, j):
         im = poses.cargar().get(nombre)
         if im is None:
@@ -207,7 +219,7 @@ class Video:
         nombre, avance, rig = self._plano_en(j)
         if nombre.startswith('pose:'):
             cap, pos = self._capa_pose(nombre[5:], avance, j)
-            img = self.bg.copy()
+            img = self._lienzo(j)
             if cap is not None:
                 img.paste(cap, pos, cap)
             self._titulo(img)
@@ -219,7 +231,7 @@ class Video:
         k = esc / (estilo.PLANOS['medio']['frac'] * H / max(rig.sujeto[3] - rig.sujeto[1], 1))
         cap, pos = camara(base, esc, fx, fy,
                           cx + A['dx'][j] * k, cy + A['dy'][j] * k)
-        img = self.bg.copy()
+        img = self._lienzo(j)
         if cap is not None:
             img.paste(cap, pos, cap)
         self._titulo(img)

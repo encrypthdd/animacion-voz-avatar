@@ -4,7 +4,9 @@
 const estado = {
   voces: [], genero: '', pais: '', voz: null,
   avatares: [], elegidos: new Set(),
-  poses: [], fondo: 'violeta', trabajo: null,
+  poses: [], trabajo: null,
+  fondo: { modo: 'degradado', id: 'violeta', color: '#7C3AED', imagen: null,
+           oscurecer: 0.45, desenfoque: 0.35 },
 };
 
 // ───────────────────────────────────────────────────────────── arranque
@@ -18,7 +20,9 @@ async function arrancar() {
   estado.voces = d.voces;
   estado.avatares = d.avatares;
   estado.poses = d.recursos;
+  estado.imagenes = d.imagenes || [];
   pintarFondos(d.fondos);
+  pintarFondosImagen();
   pintarPaises();
   pintarVoces();
   pintarAvatares();
@@ -94,7 +98,7 @@ function pintarPoses() {
 }
 
 // ───────────────────────────────────────────────────────────── subidas
-function conectarSubida(zonaSel, inputSel, url, multiple) {
+function conectarSubida(zonaSel, inputSel, url, multiple, alLlegar) {
   const zona = $(zonaSel), input = $(inputSel);
   const mandar = async (archivos) => {
     for (const f of archivos) {
@@ -108,17 +112,9 @@ function conectarSubida(zonaSel, inputSel, url, multiple) {
         const r = await (await pedir(url, { method: 'POST', body: fd })).json();
         if (!r.ok) {
           error(r.error || 'No se pudo procesar la imagen.');
-        } else if (url.includes('avatar')) {
-          estado.avatares = estado.avatares.filter((a) => a.nombre !== r.nombre);
-          estado.avatares.push({ nombre: r.nombre, img: r.img, check: r.check, aviso: r.aviso });
-          estado.elegidos.add(r.nombre);
-          pintarAvatares();
-          error('');
         } else {
-          estado.poses = estado.poses.filter((p) => p.nombre !== r.nombre);
-          estado.poses.push({ nombre: r.nombre, img: r.img });
-          pintarPoses();
-          error('');
+          alLlegar(r);
+          error(r.aviso || '');
         }
       } catch (e) {
         error('Falló la subida: ' + e.message);
@@ -204,24 +200,81 @@ function pintarVoces() {
   });
 }
 
-// ───────────────────────────────────────────────────────────── estilo
-function pintarFondos(fondos) {
+// ───────────────────────────────────────────────────────────── fondo
+function pintarFondos(presets) {
   const c = $('#fondos');
-  fondos.forEach((f) => {
+  c.innerHTML = '';
+  presets.forEach((f) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', f.id === estado.fondo);
+    b.setAttribute('aria-checked', f.id === estado.fondo.id);
     b.setAttribute('aria-label', 'Fondo ' + f.id);
     b.title = f.id;
     b.style.background = f.css;
     b.onclick = () => {
-      estado.fondo = f.id;
+      estado.fondo.id = f.id;
       [...c.children].forEach((x) => x.setAttribute('aria-checked', 'false'));
       b.setAttribute('aria-checked', 'true');
     };
     c.appendChild(b);
   });
+}
+
+function pintarFondosImagen() {
+  const ul = $('#lista-fondos');
+  ul.innerHTML = '';
+  (estado.imagenes || []).forEach((f, i) => {
+    const li = document.createElement('li');
+    li.style.animationDelay = (i * 40) + 'ms';
+    if (f.nombre === estado.fondo.imagen) li.classList.add('elegido');
+    li.innerHTML = `<img src="${f.mini}" alt="Fondo ${f.nombre}">
+      <button class="quitar" type="button" aria-label="Quitar ${f.nombre}">${ico.equis}</button>
+      <div class="pie"><span class="nom">${f.nombre}</span></div>`;
+    li.onclick = () => { estado.fondo.imagen = f.nombre; pintarFondosImagen(); };
+    li.querySelector('.quitar').onclick = async (e) => {
+      e.stopPropagation();
+      await pedir('/api/fondo/borrar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: f.nombre }),
+      });
+      estado.imagenes = estado.imagenes.filter((x) => x.nombre !== f.nombre);
+      if (estado.fondo.imagen === f.nombre) estado.fondo.imagen = null;
+      pintarFondosImagen();
+    };
+    ul.appendChild(li);
+  });
+  const hay = (estado.imagenes || []).length > 0;
+  $('#vacio-fondos').hidden = hay;
+  $('#ajustes-fondo').hidden = !estado.fondo.imagen;
+  $('#nota-fondo').hidden = !estado.fondo.imagen;
+}
+
+function pintarMuestraColor() {
+  const c = estado.fondo.color;
+  $('#muestra-color').style.background =
+    `radial-gradient(70% 50% at 50% 18%, ${c}, transparent 70%), ` +
+    `linear-gradient(160deg, #141020, ${c}44)`;
+}
+
+function modoFondo(modo) {
+  estado.fondo.modo = modo;
+  document.querySelectorAll('#seg-fondo button').forEach((b) =>
+    b.classList.toggle('activo', b.dataset.modo === modo));
+  $('#panel-degradado').hidden = modo !== 'degradado';
+  $('#panel-color').hidden = modo !== 'color';
+  $('#panel-imagen').hidden = modo !== 'imagen';
+}
+
+/* Lo que se manda al servidor. Él vuelve a validarlo todo. */
+function specFondo() {
+  const f = estado.fondo;
+  if (f.modo === 'color') return { tipo: 'color', color: f.color };
+  if (f.modo === 'imagen' && f.imagen) {
+    return { tipo: 'imagen', imagen: f.imagen,
+             oscurecer: f.oscurecer, desenfoque: f.desenfoque };
+  }
+  return { tipo: 'degradado', id: f.id };
 }
 
 // ───────────────────────────────────────────────────────────── generar
@@ -246,7 +299,7 @@ async function generar() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         guion, titulo: $('#titulo').value.trim(), voz: estado.voz,
-        fondo: estado.fondo, avatares: [...estado.elegidos],
+        fondo: specFondo(), avatares: [...estado.elegidos],
         planos: $('#planos').value, recursos: $('#usar-recursos').checked,
         velocidad: +$('#velocidad').value,
       }),
@@ -301,9 +354,9 @@ async function sondear(id) {
 }
 
 // ───────────────────────────────────────────────────────────── eventos
-document.querySelectorAll('.segmentado button').forEach((b) => {
+document.querySelectorAll('#seg-voz button').forEach((b) => {
   b.onclick = () => {
-    document.querySelectorAll('.segmentado button').forEach((x) => x.classList.remove('activo'));
+    document.querySelectorAll('#seg-voz button').forEach((x) => x.classList.remove('activo'));
     b.classList.add('activo');
     estado.genero = b.dataset.genero;
     pintarVoces();
@@ -329,6 +382,50 @@ $('#otro').onclick = () => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-conectarSubida('#soltar-avatar', '#file-avatar', '/api/avatar', false);
-conectarSubida('#soltar-pose', '#file-pose', '/api/pose', true);
+conectarSubida('#soltar-avatar', '#file-avatar', '/api/avatar', false, (r) => {
+  estado.avatares = estado.avatares.filter((a) => a.nombre !== r.nombre);
+  estado.avatares.push({ nombre: r.nombre, img: r.img, check: r.check, aviso: r.aviso });
+  estado.elegidos.add(r.nombre);
+  pintarAvatares();
+});
+conectarSubida('#soltar-pose', '#file-pose', '/api/pose', true, (r) => {
+  estado.poses = estado.poses.filter((p) => p.nombre !== r.nombre);
+  estado.poses.push({ nombre: r.nombre, img: r.img });
+  pintarPoses();
+});
+conectarSubida('#soltar-fondo', '#file-fondo', '/api/fondo', false, (r) => {
+  estado.imagenes = (estado.imagenes || []).filter((x) => x.nombre !== r.nombre);
+  estado.imagenes.push({ nombre: r.nombre, mini: r.mini });
+  estado.fondo.imagen = r.nombre;
+  pintarFondosImagen();
+});
+
+// ── controles del fondo ──────────────────────────────────────────────
+document.querySelectorAll('#seg-fondo button').forEach((b) => {
+  b.onclick = () => modoFondo(b.dataset.modo);
+});
+
+const hex = /^#?[0-9a-fA-F]{6}$/;
+function ponColor(v, desdeTexto) {
+  if (!hex.test(v)) return;
+  estado.fondo.color = v.startsWith('#') ? v : '#' + v;
+  $('#color-fondo').value = estado.fondo.color;
+  if (!desdeTexto) $('#color-hex').value = estado.fondo.color.toUpperCase();
+  pintarMuestraColor();
+}
+$('#color-fondo').addEventListener('input', (e) => ponColor(e.target.value, false));
+$('#color-hex').addEventListener('input', (e) => ponColor(e.target.value.trim(), true));
+$('#color-hex').addEventListener('blur', () => {
+  $('#color-hex').value = estado.fondo.color.toUpperCase();
+});
+
+$('#oscurecer').addEventListener('input', (e) => {
+  estado.fondo.oscurecer = +e.target.value / 100;
+  $('#osc-val').textContent = e.target.value + '%';
+});
+$('#desenfoque').addEventListener('input', (e) => {
+  estado.fondo.desenfoque = +e.target.value / 100;
+  $('#des-val').textContent = e.target.value + '%';
+});
+pintarMuestraColor();
 arrancar();

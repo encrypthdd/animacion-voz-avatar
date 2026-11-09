@@ -181,6 +181,24 @@ output{color:var(--texto);font-variant-numeric:tabular-nums}
 .interruptor input:focus-visible+.pista{outline:2px solid var(--violeta-claro);outline-offset:3px}
 
 .fondos{display:flex;gap:10px;flex-wrap:wrap}
+.panel-fondo{margin-top:14px}
+.fila-color{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+input[type=color]{-webkit-appearance:none;appearance:none;width:56px;height:46px;
+  padding:0;border:1px solid var(--borde);border-radius:11px;background:none;
+  cursor:pointer;min-height:46px;transition:var(--t)}
+input[type=color]:hover{border-color:var(--borde-fuerte)}
+input[type=color]::-webkit-color-swatch-wrapper{padding:4px}
+input[type=color]::-webkit-color-swatch{border:0;border-radius:7px}
+#color-hex{width:124px;font-family:"JetBrains Mono",Consolas,monospace;
+  text-transform:uppercase;letter-spacing:.03em}
+.muestra-fondo{flex:1;min-width:120px;height:46px;border-radius:11px;
+  border:1px solid var(--borde)}
+.rejilla.fondos-img{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
+.rejilla.fondos-img img{aspect-ratio:9/16;object-fit:cover;object-position:center}
+.rejilla.fondos-img .pie{padding:7px 9px}
+.rejilla.fondos-img .nom{font-size:12px}
+.ajustes-fondo{margin-top:4px}
+.ajustes-fondo .campo{margin-top:12px}
 .fondos button{width:52px;height:38px;border-radius:11px;border:2px solid transparent;
   cursor:pointer;transition:var(--t);position:relative}
 .fondos button:hover{transform:translateY(-2px)}

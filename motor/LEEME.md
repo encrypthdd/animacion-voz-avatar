@@ -88,13 +88,50 @@ defecto, así que un guion puede ser solo texto.
 | `avatar` | Nombre(s) de `rigs/`. Varios separados por coma se alternan |
 | `titulo` | Texto fijo arriba, en cápsula oscura. Vacío = sin título |
 | `voz` | Cualquier ID de `python -m edge_tts --list-voices` |
-| `fondo` | `violeta`, `noche`, `ambar`, `verde`, `carmin` |
+| `fondo` | Un degradado, un color propio o una imagen — ver abajo |
 | `planos` | `si` (alterna), `no` (fijo), o el nombre de un plano |
 | `recursos` | `si`, `no`, o lista de poses separadas por comas |
 | `rate` | Velocidad, por defecto `+9%` |
 | `pitch` | Tono, por defecto `-2Hz` |
 
 Para que salga siempre de cuerpo entero sin cortes: `# planos: completo`.
+
+## Fondos
+
+Tres modos, en la interfaz o en la cabecera del guion:
+
+| Modo | En el guion | Qué hace |
+|---|---|---|
+| Degradado | `# fondo: violeta` | Uno de los cinco presets: `violeta`, `noche`, `ambar`, `verde`, `carmin` |
+| Color propio | `# fondo: #1E88A8` | Deriva un degradado de ese color |
+| Imagen | `# fondo: img:atardecer` | Una foto de `fondos/`, recortada a vertical y tratada |
+
+**Un color plano se ve muerto en video.** Por eso del color que elijas no se pinta
+un relleno: se construye el mismo esqueleto que tienen los presets —oscuro arriba,
+el color a media altura y un resplandor detrás de la cabeza—. El cálculo está en
+`estilo.desde_color()`.
+
+### Imágenes
+
+```
+python fondos.py            # procesa lo que haya en fondos_fuente/
+python fondos.py --listar
+```
+
+Desde la web se suben directamente. Se guardan recortadas a 1500×2667 y con una
+miniatura; la foto original no se conserva.
+
+**Se tratan a propósito.** Una foto nítida detrás de un recorte se ve como un
+collage: los dos planos tienen el mismo foco y el mismo contraste. El desenfoque
+simula profundidad de campo y el oscurecido devuelve el peso visual a la cara. Los
+valores por defecto son 45% de oscurecido y 35% de desenfoque, ajustables desde la
+interfaz.
+
+El fondo se guarda un 9% más grande que el lienzo y cada fotograma recorta una
+ventana que va a la deriva. Da movimiento sin pagar un reescalado por fotograma:
+el recorte es gratis, el reescalado no.
+
+Las imágenes de fondo **no se versionan**: son contenido de cada instalación.
 
 **Escribe con tildes y puntuación.** La voz las usa para entonar, y los cortes de
 subtítulo y de cámara salen de los puntos y comas.

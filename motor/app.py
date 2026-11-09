@@ -10,7 +10,7 @@ import asyncio, io, json, os, re, threading, time, traceback, unicodedata, uuid
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory, abort
 
-import avatar, crear, estilo, medir, poses, render, seguridad, sticker
+import avatar, crear, estilo, fondos, medir, poses, render, seguridad, sticker
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, 'web')
@@ -104,8 +104,8 @@ def api_inicio():
                'css': f'linear-gradient(160deg,rgb{tuple(top)},rgb{tuple(bot)})'}
               for n, (top, bot, _) in estilo.FONDOS.items()]
     return jsonify({'voces': voces(), 'fondos': fondos,
-                    'planos': list(estilo.PLANOS), 'avatares': rigs,
-                    'recursos': recursos})
+                    'imagenes': fondos_imagen(), 'planos': list(estilo.PLANOS),
+                    'avatares': rigs, 'recursos': recursos})
 
 
 @app.post('/api/avatar')
@@ -180,6 +180,51 @@ def api_pose():
                     'img': f'/media/poses/{nombre}.png?t={int(time.time())}'})
 
 
+def fondos_imagen():
+    return fondos.listar()
+
+
+@app.post('/api/fondo')
+def api_fondo():
+    f = request.files.get('archivo')
+    if not f or not f.filename:
+        return jsonify({'ok': False, 'error': 'No llegó ningún archivo.'}), 400
+    nombre = limpio(request.form.get('nombre') or f.filename)
+    os.makedirs(fondos.FUENTE, exist_ok=True)
+    ext = os.path.splitext(f.filename)[1].lower() or '.jpg'
+    if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+        return jsonify({'ok': False, 'error': 'Formato no admitido. Usa PNG, JPG o WEBP.'}), 400
+    tmp = os.path.join(fondos.FUENTE, nombre + ext)
+    f.save(tmp)
+    mal = seguridad.revisar_imagen(tmp)
+    if mal:
+        os.remove(tmp)
+        return jsonify({'ok': False, 'error': mal}), 400
+    try:
+        from PIL import Image as _I
+        with _I.open(tmp) as im:
+            an, al = im.size
+        fondos.guardar(tmp, nombre)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'No se pudo procesar: {e}'}), 500
+    # El fondo se amplía para llenar 1080x1920; avisar si va a quedar blando.
+    aviso = ''
+    if max(1080 / an, 1920 / al) > 1.25:
+        aviso = (f'La imagen es pequeña ({an}×{al}) y hay que ampliarla para '
+                 'llenar el video: se verá algo blanda.')
+    elif an / al > 1.1:
+        aviso = 'Es apaisada: al recortarla a vertical se pierden los lados.'
+    return jsonify({'ok': True, 'nombre': nombre, 'aviso': aviso,
+                    'mini': f'/media/fondos/{nombre}_mini.jpg?t={int(time.time())}'})
+
+
+@app.post('/api/fondo/borrar')
+def api_fondo_borrar():
+    d = request.get_json(force=True, silent=True) or {}
+    ok = fondos.borrar(limpio(d.get('nombre') or ''))
+    return jsonify({'ok': ok})
+
+
 @app.get('/api/muestra')
 def api_muestra():
     """Breve muestra de voz para poder elegirla escuchando."""
@@ -202,6 +247,33 @@ def api_muestra():
         except Exception as e:
             return jsonify({'error': str(e)}), 502
     return send_file(ruta, mimetype='audio/mpeg')
+
+
+def leer_fondo(spec):
+    """Valida lo que manda la interfaz. Nunca se confía en el nombre recibido:
+    un fondo de imagen tiene que estar en el catálogo."""
+    if not isinstance(spec, dict):
+        return spec if spec in estilo.FONDOS else 'violeta'
+    tipo = spec.get('tipo')
+    if tipo == 'color':
+        try:
+            estilo.desde_color(spec.get('color', ''))
+            return {'tipo': 'color', 'color': spec['color']}
+        except (ValueError, KeyError):
+            return 'violeta'
+    if tipo == 'imagen':
+        nombre = limpio(spec.get('imagen') or '')
+        if not fondos.ruta(nombre):
+            return 'violeta'
+        def frac(k, pord):
+            try:
+                return min(max(float(spec.get(k, pord)), 0.0), 1.0)
+            except (TypeError, ValueError):
+                return pord
+        return {'tipo': 'imagen', 'imagen': nombre,
+                'oscurecer': frac('oscurecer', 0.45),
+                'desenfoque': frac('desenfoque', 0.35)}
+    return spec.get('id') if spec.get('id') in estilo.FONDOS else 'violeta'
 
 
 def _trabajar(tid, cfg, texto, salida):
@@ -258,8 +330,7 @@ def api_generar():
 
     cfg = dict(crear.POR_DEFECTO)
     cfg.update(voz=vid, titulo=(d.get('titulo') or '').strip(),
-               fondo=d.get('fondo') if d.get('fondo') in estilo.FONDOS else 'violeta',
-               avatar=','.join(elegidos))
+               fondo=leer_fondo(d.get('fondo')), avatar=','.join(elegidos))
     pl = d.get('planos', 'si')
     cfg['planos'] = True if pl == 'si' else (False if pl == 'no' else pl)
     cfg['recursos'] = bool(d.get('recursos', True))
