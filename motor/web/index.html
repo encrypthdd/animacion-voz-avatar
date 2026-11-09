@@ -38,8 +38,20 @@
     <section class="tarjeta" style="--i:0" aria-labelledby="t1">
       <div class="titulo-paso"><span class="num">1</span>
         <div><h2 id="t1">Avatar que habla</h2>
-          <p class="ayuda">Cuerpo entero, fondo plano y cara de frente. Se miden ojos, boca y cejas para poder animarlo.</p></div>
+          <p class="ayuda">Se miden ojos, boca y cejas para poder animarlo, así que la imagen tiene que cumplir cuatro cosas.</p></div>
       </div>
+
+      <ul class="requisitos">
+        <li><b>Fondo plano</b> (blanco o de un solo color). Una foto de fondo no se puede recortar.</li>
+        <li><b>Cara de frente</b>, con los dos ojos visibles.</li>
+        <li><b>Boca con labios y dientes a la vista.</b> El motor abre la mandíbula
+            desde la línea de la boca: si está tapada por una barba o es una raya
+            fina, no hay nada que abrir.</li>
+        <li><b>Cuerpo entero</b>, para que los planos abiertos tengan qué enseñar.</li>
+      </ul>
+      <p class="mini aviso-suave">Los personajes tipo Papá Noel con barba, o de estilo
+         anime con la boca de una línea, no se pueden animar con este método. Lo que
+         mejor funciona es un render 3D de personaje, como el de ejemplo.</p>
 
       <div class="soltar" id="soltar-avatar">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>

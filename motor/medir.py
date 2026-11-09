@@ -18,6 +18,14 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 RIGS = os.path.join(AQUI, 'rigs')
 
 
+# Una boca más estrecha que esto respecto a la separación de los ojos no es una
+# boca: es otra cosa que se le parece. Medido: en los personajes que funcionan
+# sale entre 1.7 y 1.9 veces.
+MIN_BOCA = 0.55
+# Cuánto puede desviarse el centro de la boca del centro de los ojos.
+MAX_DESVIO = 0.35
+
+
 class NoMedible(Exception):
     pass
 
@@ -63,103 +71,104 @@ def recortar(ruta):
 
 
 # ---------------------------------------------------------------- ojos
-def detectar_ojos(a, suj):
-    """Busca la abertura del ojo como region NO-piel rodeada de piel.
+def candidatos_ojos(a, suj):
+    """Parejas candidatas a ojos, de más a menos plausible.
 
-    Buscar la esclerotica no sirve: el iris la parte en dos medialunas finas que
-    cualquier filtro de forma descarta. La abertura entera (esclerotica + iris +
-    contorno) es en cambio una isla solida dentro de la piel, y ese "rodeada de
-    piel" es lo que separa un ojo de un mechon de pelo.
+    Busca el ojo por su ESTRUCTURA, no por el color de alrededor.
+
+    La versión anterior exigía que el ojo fuera una isla rodeada de piel, con
+    umbrales de tono humano. Eso descarta a Papá Noel —ojos rodeados de barba
+    blanca— y a cualquier personaje que no sea de color carne, como Sonic.
+
+    Lo que sí tienen todos los ojos dibujados: una zona clara y poco saturada
+    (la esclerótica) con una zona oscura dentro o pegada (el iris). Esa pareja
+    es lo que se busca aquí. La esclerótica se dilata antes de agrupar porque
+    el iris la parte en dos medialunas que ningún filtro de forma aceptaría.
     """
+    lum = a.mean(axis=2)
     R, B = a[:, :, 0], a[:, :, 2]
-    piel = (R - B > 72) & (R > 140)
     ys, xs = np.nonzero(suj)
     y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max()
     alto, ancho = y1 - y0, x1 - x0
+    cabeza = slice(y0, y0 + int(alto * 0.5))
+    area_cabeza = ancho * alto * 0.5
 
-    claro = (a.mean(axis=2) > 150) & ((R - B) < 55)
-    cand = (~piel) & suj
-    cand[:y0, :] = False
-    cand[y0 + int(alto * 0.45):, :] = False       # solo la cabeza
-    lab, n = ndimage.label(cand)
-    area_cabeza = ancho * alto * 0.45
+    claro = (lum > 140) & (np.abs(R - B) < 60) & suj
+    oscuro = (lum < 110) & suj
+    for m in (claro, oscuro):
+        m[:cabeza.start, :] = False
+        m[cabeza.stop:, :] = False
+
+    # el iris parte la esclerótica en dos: se cierra el hueco antes de agrupar
+    radio = max(2, int(0.012 * alto))
+    unido = ndimage.binary_closing(claro, np.ones((radio * 2 + 1,) * 2))
+    lab, n = ndimage.label(unido)
 
     blobs = []
     for i in range(1, n + 1):
         m = lab == i
         area = int(m.sum())
-        if area < 150 or area > 0.06 * area_cabeza:     # el pelo es enorme
+        if area < max(60, 0.00025 * area_cabeza) or area > 0.05 * area_cabeza:
             continue
         yy, xx = np.nonzero(m)
         an, al = xx.max() - xx.min() + 1, yy.max() - yy.min() + 1
-        if not (0.5 <= an / al <= 3.2):
+        if not (0.45 <= an / al <= 3.4):
             continue
-        borde = ndimage.binary_dilation(m, iterations=3) & ~m
-        if piel[borde].mean() < 0.55:                   # debe ser una isla en la piel
-            continue
-        # Una ceja tambien es una isla oscura rodeada de piel, pareada y mas
-        # arriba. Lo que la separa de un ojo es que no tiene esclerotica.
-        if claro[m].mean() < 0.12:
+        # La pupila tiene que estar DENTRO de la esclerótica, no al lado: el
+        # cierre de antes ya rellenó el hueco del iris. Aceptando "pegada" se
+        # colaban los brillos del pelo, que lindan con su contorno oscuro.
+        dentro = (oscuro & m).sum()
+        if dentro < 0.06 * area:
             continue
         blobs.append(dict(m=m, n=area, cx=xx.mean(), cy=yy.mean(), an=an, al=al))
     if len(blobs) < 2:
         raise NoMedible(f'solo {len(blobs)} candidatos a ojo')
 
-    mejor, puntos = None, 1e9
+    parejas = []
     for i in range(len(blobs)):
         for j in range(i + 1, len(blobs)):
             A, Bc = blobs[i], blobs[j]
             sep = abs(A['cx'] - Bc['cx'])
-            if sep < 0.8 * max(A['an'], Bc['an']):
+            if sep < 0.7 * max(A['an'], Bc['an']) or sep > 0.75 * ancho:
                 continue
             razon = max(A['n'], Bc['n']) / min(A['n'], Bc['n'])
-            if razon > 3.0:
+            if razon > 3.2:
                 continue
             alt_med = (A['cy'] + Bc['cy']) / 2 - y0
-            p = (abs(A['cy'] - Bc['cy']) / max(sep, 1)       # a la misma altura
-                 + 0.25 * razon                              # del mismo tamano
-                 + 0.3 * alt_med / alto)                     # algo mas arriba, mejor
-            if p < puntos:
-                puntos, mejor = p, (A, Bc)
-    if mejor is None:
+            p = (abs(A['cy'] - Bc['cy']) / max(sep, 1)     # a la misma altura
+                 + 0.25 * razon                            # del mismo tamaño
+                 + 0.3 * alt_med / alto)                   # algo más arriba, mejor
+            parejas.append((p, tuple(sorted((A, Bc), key=lambda d: d['cx']))))
+    if not parejas:
         raise NoMedible('no hay pareja de ojos plausible')
-    return tuple(sorted(mejor, key=lambda d: d['cx']))
+    parejas.sort(key=lambda t: t[0])
+    return [par for _, par in parejas]
+
+
+def detectar_ojos(a, suj):
+    return candidatos_ojos(a, suj)[0]
 
 
 def mascara_ojo(a, suj, blob):
-    """Rellena la abertura del ojo a partir del blob de esclerotica."""
-    R, B = a[:, :, 0], a[:, :, 2]
-    piel = (R - B > 72) & (R > 140)
-    ojo = (~piel) & suj
-    yy, xx = np.nonzero(blob['m'])
-    x0, x1 = xx.min() - 6, xx.max() + 7
-    y0, y1 = yy.min() - 10, yy.max() + 11
+    """Abertura del ojo, a partir del blob ya detectado.
+
+    Se rellena por columnas entre el borde superior e inferior del blob: así
+    entra el iris, que es oscuro y por tanto no formaba parte de la esclerótica.
+    No se usa ningún umbral de color de piel, para que valga con cualquier
+    personaje.
+    """
+    m0 = blob['m']
+    yy, xx = np.nonzero(m0)
+    x0, x1 = xx.min(), xx.max() + 1
     m = np.zeros(a.shape[:2], bool)
-    for x in range(max(x0, 0), min(x1, a.shape[1])):
-        col = ojo[:, x]
-        tramos, ini = [], None
-        for y in range(max(y0, 0), min(y1, a.shape[0]) + 1):
-            on = y < min(y1, a.shape[0]) and col[y]
-            if on and ini is None:
-                ini = y
-            elif not on and ini is not None:
-                if y - ini >= 3:
-                    tramos.append((ini, y))
-                ini = None
-        if not tramos:
-            continue
-        grupos, cur = [], [tramos[0]]
-        for t in tramos[1:]:
-            if t[0] - cur[-1][1] <= 5:
-                cur.append(t)
-            else:
-                grupos.append(cur); cur = [t]
-        grupos.append(cur)
-        g = max(grupos, key=lambda G: G[-1][1] - G[0][0])
-        if g[-1][1] - g[0][0] >= 8:
-            m[g[0][0]:g[-1][1], x] = True
-    mi = Image.fromarray((m * 255).astype(np.uint8), 'L').filter(ImageFilter.MaxFilter(5))
-    return np.asarray(mi) > 127
+    for x in range(x0, x1):
+        col = np.nonzero(m0[:, x])[0]
+        if len(col):
+            m[col.min():col.max() + 1, x] = True
+    radio = max(1, int(round(0.06 * (x1 - x0))))
+    mi = Image.fromarray((m * 255).astype(np.uint8), 'L').filter(
+        ImageFilter.MaxFilter(radio * 2 + 1))
+    return (np.asarray(mi) > 127) & suj
 
 
 # ---------------------------------------------------------------- boca
@@ -330,10 +339,35 @@ def medir(ruta, nombre=None, guardar=True):
     rgba, suj = recortar(ruta)
     a = np.asarray(rgba)[:, :, :3].astype(int)
 
-    izq, der = detectar_ojos(a, suj)
-    sep = abs(der['cx'] - izq['cx'])
+    # Detección conjunta: lo que valida una pareja de ojos es que haya una boca
+    # creíble debajo. Con la pareja suelta se colaban la cinta de la frente de
+    # un personaje o una púa del pelo, y salía un rig con medidas absurdas.
+    ultimo = None
+    for izq, der in candidatos_ojos(a, suj)[:8]:
+        sep = abs(der['cx'] - izq['cx'])
+        try:
+            x0, x1, line, top = detectar_boca(a, suj, izq, der)
+        except NoMedible as e:
+            ultimo = e
+            continue
+        if (x1 - x0) < MIN_BOCA * sep:
+            ultimo = NoMedible(
+                f'la boca encontrada mide {(x1-x0)/sep:.2f} veces la separación de '
+                f'los ojos, y hace falta al menos {MIN_BOCA}')
+            continue
+        # y tiene que caer centrada bajo los ojos: si no, lo detectado como
+        # ojos estaba en otro sitio de la cabeza
+        desvio = abs((x0 + x1) / 2 - (izq['cx'] + der['cx']) / 2) / sep
+        if desvio > MAX_DESVIO:
+            ultimo = NoMedible(
+                f'la boca queda descentrada respecto a los ojos ({desvio:.2f} veces '
+                'su separación): lo detectado como ojos no lo es')
+            continue
+        break
+    else:
+        raise ultimo or NoMedible('no se encuentra una cara que se pueda animar')
+
     m_izq, m_der = mascara_ojo(a, suj, izq), mascara_ojo(a, suj, der)
-    x0, x1, line, top = detectar_boca(a, suj, izq, der)
     bx0, bx1, by0, by1 = detectar_cejas(a, suj, izq, der)
     menton = detectar_menton(a, suj, line, sep)
 

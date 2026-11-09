@@ -133,7 +133,9 @@ def api_avatar():
         d, _ = medir.medir(ruta, nombre)
     except medir.NoMedible as e:
         return jsonify({'ok': False, 'nombre': nombre, 'medible': False,
-                        'error': str(e)}), 200
+                        'error': f'No se pudo medir la cara: {e}. Revisa que el '
+                                 'fondo sea plano, la cara esté de frente y la '
+                                 'boca tenga labios y dientes a la vista.'}), 200
     except Exception as e:
         return jsonify({'ok': False, 'error': f'No se pudo procesar: {e}'}), 500
     avatar._cache.pop(nombre, None)

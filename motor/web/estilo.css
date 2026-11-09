@@ -373,3 +373,13 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:7px}
 .pistas .quitar{position:static;width:30px;height:30px}
 .ajustes-musica{margin-top:4px}
 .ajustes-musica .campo{margin-top:12px}
+
+/* ---------------------------------------------------------- requisitos */
+.requisitos{margin:0 0 14px;padding:0 0 0 18px;list-style:none;
+  font-size:13.2px;color:var(--suave);display:grid;gap:5px}
+.requisitos li{position:relative}
+.requisitos li::before{content:"";position:absolute;left:-14px;top:8px;width:5px;
+  height:5px;border-radius:50%;background:var(--violeta-claro)}
+.requisitos b{color:var(--texto);font-weight:600}
+.aviso-suave{background:rgba(251,191,36,.08);border-left:2px solid rgba(251,191,36,.5);
+  border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:14px;color:#D9C89A}
